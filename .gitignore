@@ -1,0 +1,10 @@
+# Vendored binary dependencies - large (~30MB), fetched from piwheels.org
+# and deb.debian.org, not source we authored. README.md documents the
+# exact recipe to reproduce them (wheel/deb versions, extraction steps).
+/pylibs/
+/vendor_libs/
+
+# Runtime artifacts
+*.log
+__pycache__/
+*.pyc
