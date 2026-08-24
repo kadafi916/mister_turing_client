@@ -111,10 +111,61 @@ Defaults assume `mister_status_server.py` is running on the same MiSTer
 With no `mister_status_server` reachable, it shows a "Waiting for MiSTer
 status server..." screen and keeps polling rather than crashing.
 
-## Current state / next steps
+## Features
 
-This renders a first HUD screen: core/game identity (from
-`/status/snapshot`), CPU/memory bars and uptime (`/status/system`), and SD
-card usage (`/status/storage`). It does not yet do artwork, RetroAchievements,
-or multiple pages/touch-equivalent navigation the way the ESP32 firmware
-does — this is a first working screen to build on, not feature parity.
+- **Now Playing** — core/game identity, CPU/memory bars, uptime, SD usage,
+  and game/core artwork fetched on demand from ScreenScraper (see below).
+- **RetroAchievements** — progress, points and hardcore breakdown, and a
+  paginated trophy list, on two auto-rotating pages (no touch input on this
+  hardware, so pages cycle on a timer rather than being tapped through).
+  An unlock popup overlays whatever page is showing the moment the server
+  reports a new one. Entirely server-side — see
+  `docs/configuration.md#retroachievements` in MiSTer_monitor for how to
+  set up `ra_credentials.ini` on the MiSTer; this client only renders what
+  `/status/retroachievements` already reports.
+
+### Artwork setup (ScreenScraper)
+
+Copy `config.ini.example` to `config.ini` (gitignored - never commit real
+credentials) and fill in:
+
+- `ss_user` / `ss_pass` — your regular ScreenScraper member account (free,
+  instant signup).
+- `ss_dev_user` / `ss_dev_pass` — a ScreenScraper *developer* key, a
+  separate credential pair identifying the calling application, not the
+  same as your member login. Request one at
+  https://www.screenscraper.fr/forumsujets.php?frub=12 (manual, human-reviewed,
+  not instant). Without this, artwork stays disabled and everything else
+  keeps working — same graceful degradation RetroAchievements uses when
+  unconfigured.
+
+`screenscraper.py` and `screenscraper_systems.py` are ports of
+MiSTer_monitor's own ScreenScraper integration (same endpoints, same
+credential model, same core-name -> systemeid table, same media-type/region
+resolution order) - deliberately kept identical since that's proven
+behavior against the real API, not a re-guess. One limitation not yet
+ported: the firmware's extension-based back-compat disambiguation (e.g. a
+2600 cartridge loaded on the 7800 core) - those cores fall back to their
+own system, correct in the large majority of cases.
+
+Downloaded art is cached under `artwork_cache/` (gitignored, unbounded SD
+card space) keyed by CRC or system id, so nothing is re-fetched once seen.
+
+## Alternatives considered for artwork
+
+ScreenScraper was kept as the sole source rather than adding a fallback:
+IGDB (self-service Twitch signup, but no CRC matching and weak arcade/MAME
+coverage) and TheGamesDB (same manual-forum-request friction as
+ScreenScraper, no better) were considered and set aside - every mainstream
+retro frontend (EmulationStation, Batocera, Recalbox) independently landed
+on ScreenScraper for the same reason: it's the one built for CRC-based,
+arcade-heavy emulation scraping, which is what a MiSTer library actually
+needs.
+
+## Next steps
+
+Touch-equivalent navigation doesn't exist on this hardware (output-only
+screen), so further pages would still need to be timer-cycled. Not yet
+built: the extension-based system disambiguation mentioned above, and a
+config option for page rotation speed (currently a fixed 6s in
+`mister_turing_client.py`).

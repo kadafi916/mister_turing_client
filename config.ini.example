@@ -1,0 +1,31 @@
+; Copy this file to config.ini (same directory) and fill in your credentials.
+; config.ini is gitignored - it holds secrets and is never committed.
+;
+; Format matches MiSTer_monitor's own config.ini ([screenscraper] section) -
+; see https://github.com/chipster6502/MiSTer_monitor/blob/main/docs/configuration.md
+
+[screenscraper]
+; Your regular ScreenScraper member account (free, instant signup at
+; https://www.screenscraper.fr).
+ss_user=
+ss_pass=
+
+; A ScreenScraper *developer* key - a separate credential pair issued to an
+; application, not the same as your member login. Request one in the forum:
+; https://www.screenscraper.fr/forumsujets.php?frub=12
+; Without this, artwork fetching stays disabled (same graceful degradation
+; RetroAchievements uses when unconfigured) - everything else still works.
+ss_dev_user=
+ss_dev_pass=
+
+; Preferred region for box art / wheel art (wor, us, eu, or jp). The other
+; three are tried next in fixed order, then the region-less generic variant.
+region=us
+
+; Optional: override which media types are tried, and in what order, for
+; each context. Uncomment to customize - see README.md for the token list.
+[images]
+;core_media_order=wheel-steel,wheel-carbon,wheel,photo,illustration,box3d,box2d,marquee,fanart,screenshot
+;arcade_subsystem_media_order=wheel-steel,wheel-carbon,wheel
+;arcade_media_order=fanart,marquee,wheel-carbon,wheel-steel,wheel,box3d,box2d,screenshot
+;game_media_order=box3d,box2d,wheel-carbon,wheel-steel,wheel,fanart,marquee,screenshot

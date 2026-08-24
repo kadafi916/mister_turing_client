@@ -8,3 +8,7 @@
 *.log
 __pycache__/
 *.pyc
+/artwork_cache/
+
+# Secrets - copy config.ini.example to config.ini and fill it in
+/config.ini
