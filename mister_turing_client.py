@@ -69,7 +69,7 @@ POPUP_BG = (26, 22, 10)
 
 ART_W = 200  # artwork panel width on the Now Playing page
 
-PAGE_SECONDS = 6.0
+DEFAULT_PAGE_SECONDS = 12.0
 POPUP_SECONDS = 6.0
 
 
@@ -266,6 +266,9 @@ def main():
                      help="poll/refresh interval in seconds (default: %(default)s)")
     ap.add_argument("--brightness", type=int, default=80,
                      help="screen brightness 0-100 (default: %(default)s)")
+    ap.add_argument("--page-seconds", type=float, default=DEFAULT_PAGE_SECONDS,
+                     help="how long each page (Now Playing / RA Progress / RA Trophies) "
+                          "stays up before rotating (default: %(default)s)")
     ap.add_argument("--config", default=os.path.join(_HERE, "config.ini"),
                      help="path to config.ini (default: %(default)s)")
     ap.add_argument("--once", action="store_true",
@@ -354,7 +357,7 @@ def main():
                 page_idx = (page_idx + 1) % len(pages)
                 if pages[page_idx] != "now_playing" and not ra_pages_available:
                     page_idx = 0
-                page_deadline = now + PAGE_SECONDS
+                page_deadline = now + args.page_seconds
                 if pages[page_idx] == "ra_trophies":
                     trophies_page_num = (trophies_page_num + 1) % trophies_total_pages
 
