@@ -124,6 +124,36 @@ status server..." screen and keeps polling rather than crashing.
   set up `ra_credentials.ini` on the MiSTer; this client only renders what
   `/status/retroachievements` already reports.
 
+### RetroAchievements: reading `unlocks_tracked` correctly
+
+`ra_status.py`'s `unlocks_tracked` field (rendered on the RA Progress page
+as "view-only, pair with odelot/Main_MiSTer" when false) answers a more
+specific question than "is the fork installed" — worth knowing so the
+message isn't misread:
+
+- **An `RA_`-prefixed core name is not proof the fork is running.** That
+  prefix can also come from **MiSTer Companion**, a separate tool that
+  renames/organizes core launchers, independent of whether odelot's fork
+  is actually installed. Don't infer fork presence from the core name
+  alone (a mistake made once already while building this).
+- The server's real check (`_unlocks_are_tracked()`) is two things:
+  `/media/fat/retroachievements.cfg` existing (the fork's own config), AND
+  `/tmp/ra_debug.log`'s mtime being fresh — which only happens with
+  **`debug=1`** set in that config. Without `debug=1`, the fork never
+  writes its live heartbeat, so the server can't confirm an RA-adapted
+  core is running right now even if the fork is genuinely installed and
+  working.
+- **The fork reads `retroachievements.cfg` at core-load time, not
+  continuously.** Editing the file and saving it does nothing to the
+  currently-running core — reload/relaunch the game once for a `debug=1`
+  change to take effect and `/tmp/ra_debug.log` to start growing.
+- `debug=1` is also what MiSTer_monitor's own docs describe as unlocking
+  near-instant (<1s) unlock popups instead of the few-seconds
+  cloud-polling fallback, and the only route CD systems (PS1/Saturn/Mega
+  CD, which the server can't hash locally) have to resolve at all — worth
+  turning on regardless of whether the `unlocks_tracked` message matters
+  to you.
+
 ### Artwork setup (ScreenScraper)
 
 Copy `config.ini.example` to `config.ini` (gitignored - never commit real
@@ -162,10 +192,53 @@ on ScreenScraper for the same reason: it's the one built for CRC-based,
 arcade-heavy emulation scraping, which is what a MiSTer library actually
 needs.
 
+## A `mister_status_server.py` bug this surfaced
+
+While testing RA/artwork against real games, some loaded fine on-screen
+(core/game name showed correctly) but never produced a CRC, hash, or
+match of any kind — `/status/rom/details` reported
+`"error": "File not found inside ZIP: "` with an empty internal path,
+even though the zip was valid and contained exactly the expected file.
+
+Root cause: `is_zip_path()` computes the in-zip path as whatever text
+follows `.zip` in the reported ROM path. Some cores report just the zip's
+own path with nothing after it (rather than `zip/file.ext`), so that
+computation comes out empty — and every one of
+`get_zip_file_info_enhanced()`'s five matching strategies is derived from
+that empty string, so none can ever match. There was no fallback for the
+unambiguous case (a single-entry zip). Fixed on the
+`fix/zip-single-entry-no-internal-path` branch of the `MiSTer_monitor`
+checkout (not this repo — that file belongs to the separate AGPL server
+project) and deployed to the test MiSTer; worth upstreaming as a PR.
+
+If RA/artwork silently produce nothing for a specific game despite
+working for others, check `/status/rom/details`'s `error` field for this
+exact message before assuming it's a credential or matching problem.
+
+## Credential gotchas hit while setting this up
+
+Worth knowing before you re-hit these:
+
+- **RA's Web API key vs. your account password are easy to mix up.**
+  retroachievements.org's Settings has both a login password and a
+  separate "Web API Key" (Settings → Keys) — `ra_credentials.ini` needs
+  the latter. A pasted password gets you a silent-looking `HTTP 401` in
+  `mister_status_server.py`'s own log (`/tmp/mister_monitor.log`, grep
+  `[RA]`) that surfaces downstream as every game reporting
+  `rom_not_recognized` — which looks exactly like a hash-matching problem
+  and isn't one. Check the log for `401` before assuming the ROMs are the
+  issue.
+- **A copy-paste that duplicates the key** (pasting a 32-character key
+  twice back-to-back, giving a 64-character value) fails the same way,
+  same fix: check the log.
+- Both `screenscraper.py` and `retroachievements.py`'s HTTP error paths
+  log 401/403 at `warning` (not `debug`) specifically because of the above
+  — a credential problem should be loud, not indistinguishable from "no
+  data available."
+
 ## Next steps
 
 Touch-equivalent navigation doesn't exist on this hardware (output-only
 screen), so further pages would still need to be timer-cycled. Not yet
-built: the extension-based system disambiguation mentioned above, and a
-config option for page rotation speed (currently a fixed 6s in
-`mister_turing_client.py`).
+built: the extension-based system disambiguation mentioned above.
+Page rotation speed is configurable via `--page-seconds` (default 12s).

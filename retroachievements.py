@@ -33,7 +33,17 @@ class RAStatus:
     last_unlock_points: int = 0
     last_unlock_hardcore: bool = False
     last_unlock_description: str = ""
-    unlocks_tracked: bool = False    # True once the odelot fork is detected
+    # True only when the server can currently confirm an RA-adapted core is
+    # actively running: /media/fat/retroachievements.cfg (the odelot fork's
+    # own config) exists AND /tmp/ra_debug.log has a fresh mtime, which only
+    # happens with debug=1 set in that config (see ra_status.py's
+    # _unlocks_are_tracked()). NOT the same as "an RA_-prefixed core is
+    # loaded" - that prefix can come from MiSTer Companion independently of
+    # whether the fork is installed at all, so don't use core_raw as a
+    # substitute for this field. The fork also only re-reads its config at
+    # core-load time, so flipping debug=1 needs a game reload before this
+    # flips true.
+    unlocks_tracked: bool = False
 
     @classmethod
     def from_json(cls, data: dict) -> "RAStatus":
