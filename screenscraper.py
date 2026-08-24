@@ -109,22 +109,40 @@ class ScreenScraperClient:
             with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                 body = resp.read()
         except urllib.error.HTTPError as e:
-            logger.debug("ScreenScraper %s: HTTP %s", endpoint, e.code)
+            # Visible at the default log level on purpose: an auth/credential
+            # problem here (401/403) would otherwise fail exactly as silently
+            # as the RA one did before its server-side print() caught it -
+            # this is the equivalent guard on the client side.
+            level = logger.warning if e.code in (401, 403) else logger.debug
+            level("ScreenScraper %s: HTTP %s", endpoint, e.code)
             return None
         except Exception as e:
             logger.debug("ScreenScraper %s: %s", endpoint, e)
             return None
         try:
-            return json.loads(body)
+            data = json.loads(body)
         except json.JSONDecodeError:
             # ScreenScraper returns plain-text errors (quota exceeded, bad
-            # credentials, etc.) instead of JSON on failure.
-            logger.debug("ScreenScraper %s: non-JSON response (%s)", endpoint, body[:120])
+            # credentials, etc.) instead of JSON on failure - visible for the
+            # same reason as the HTTPError case above.
+            logger.warning("ScreenScraper %s: non-JSON response (%s)", endpoint, body[:200])
             return None
+        # The documented v2 shape wraps the payload in a top-level "response"
+        # key ({"header": ..., "response": {"jeu": ...}}), confirmed against
+        # every third-party client we could find - but that's inference, not
+        # something read from ScreenScraper's own source, so tolerate an
+        # unwrapped body too rather than assume and break silently.
+        if isinstance(data, dict) and "response" in data:
+            return data["response"]
+        return data
 
     def _download_first_match(self, endpoint: str, base_params: dict, media_order: str, dest_path: str) -> bool:
+        last_reason = None
+        attempts = 0
+        auth_failures = 0
         for token in media_order.split(","):
             for media_type in _media_variants(token, self.config.region):
+                attempts += 1
                 params = dict(base_params)
                 params["media"] = media_type
                 url = f"{API_BASE}/{endpoint}?" + urllib.parse.urlencode(params)
@@ -133,9 +151,19 @@ class ScreenScraperClient:
                     with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                         content_type = resp.headers.get("Content-Type", "")
                         body = resp.read()
-                except Exception:
+                except urllib.error.HTTPError as e:
+                    if e.code in (401, 403):
+                        auth_failures += 1
+                    last_reason = f"HTTP {e.code}"
+                    continue
+                except Exception as e:
+                    last_reason = str(e)
                     continue
                 if not content_type.startswith("image/") or len(body) < 500:
+                    # A wrong/rejected credential often comes back as a 200
+                    # with an HTML or plain-text error body rather than an
+                    # HTTP error status - this is what would catch that.
+                    last_reason = f"non-image response (Content-Type: {content_type or 'none'})"
                     continue
                 tmp_path = dest_path + ".part"
                 with open(tmp_path, "wb") as f:
@@ -143,6 +171,13 @@ class ScreenScraperClient:
                 os.replace(tmp_path, dest_path)
                 logger.info("Artwork cached: %s (%s, %d bytes)", os.path.basename(dest_path), media_type, len(body))
                 return True
+
+        if auth_failures:
+            logger.warning("Artwork fetch for %s: all %d attempts rejected as unauthorized "
+                            "(check ss_dev_user/ss_dev_pass in config.ini)", dest_path, attempts)
+        elif attempts:
+            logger.info("Artwork fetch for %s: no match in %d attempts (last: %s)",
+                        dest_path, attempts, last_reason)
         return False
 
     # -- game art -------------------------------------------------------------
@@ -195,7 +230,7 @@ class ScreenScraperClient:
                 "sha1": "",
             })
             data = self._get_json("jeuInfos.php", params)
-            jeu = (data or {}).get("response", {}).get("jeu")
+            jeu = (data or {}).get("jeu")
             if jeu and jeu.get("id"):
                 sys_id = (jeu.get("systeme") or {}).get("id", system_id)
                 return jeu["id"], sys_id
@@ -206,7 +241,7 @@ class ScreenScraperClient:
         params = self._auth_params()
         params.update({"output": "json", "systemeid": system_id, "recherche": romnom})
         data = self._get_json("jeuRecherche.php", params)
-        candidates = (data or {}).get("response", {}).get("jeux") or []
+        candidates = (data or {}).get("jeux") or []
         if candidates:
             jeu = candidates[0]
             sys_id = (jeu.get("systeme") or {}).get("id", system_id)
