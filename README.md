@@ -8,6 +8,62 @@ firmware uses. This is a separate integration path, not a port of that
 firmware: it runs as a plain Python client instead of on-panel firmware -
 see "Why this exists" below for the reasoning.
 
+## Quickstart
+
+**Requirements**
+
+- A MiSTer with network access, running
+  [MiSTer_monitor](https://github.com/chipster6502/MiSTer_monitor)'s
+  `mister_status_server.py` already installed and running - see that
+  project's own instructions. This client is a display for its API, not
+  a replacement for it; with nothing answering on port 8081 there's
+  nothing to show.
+- A Turing/XuanFang/UsbMonitor-family USB smart screen, plugged into the
+  MiSTer.
+- SSH access to the MiSTer (`root`, default password `1` unless you've
+  changed it - MiSTer convention, same account `mister_status_server.py`
+  itself installs under).
+
+**Steps**
+
+1. Copy this repo onto the MiSTer - `scp`, WinSCP, or MiSTer's own Samba
+   share all work equally well:
+   ```
+   scp -r mister_turing_client root@<mister-ip>:/media/fat/mister_turing_client_install
+   ```
+2. SSH in and build the runtime bundle - once, needs network access (see
+   "Why the odd `pylibs/` + `vendor_libs/` layout" below for what this
+   fetches and why it can't just be `pip install`ed on-device):
+   ```
+   ssh root@<mister-ip>
+   cd /media/fat/mister_turing_client_install
+   bash build_pylibs.sh
+   ```
+3. Install - wires up autostart + crash-respawn (see "Installing on
+   MiSTer" below) and starts the client immediately:
+   ```
+   bash install.sh
+   ```
+
+That's it - the screen should already be showing "Now Playing" (or
+"Waiting for MiSTer status server..." if `mister_status_server.py` from
+the requirements above isn't reachable yet). It survives reboots and
+restarts itself if the USB connection ever drops.
+
+Artwork (ScreenScraper and/or a self-hosted
+[libretro-artwork-api](https://github.com/kadafi916/libretro-artwork-api))
+and RetroAchievements are both optional, off by default, and covered in
+"Artwork setup" and "Features" below - nothing above requires either.
+
+Afterward, everything lives at
+`/media/fat/Scripts/.config/mister_monitor/turing_client/` (matching
+`mister_status_server.py`'s own layout convention):
+
+```
+bash /media/fat/Scripts/.config/mister_monitor/turing_client/start_turing_client.sh status
+bash /media/fat/Scripts/.config/mister_monitor/turing_client/uninstall.sh   # to remove it
+```
+
 ## Why this exists
 
 MiSTer_monitor's display sketches run as firmware on an ESP32 wired
