@@ -9,13 +9,19 @@ Pillow, pushed to the screen over the vendored turing_lcd library. See
 README.md for the full picture, including why Pillow/numpy are vendored
 rather than pip-installed on MiSTer's own Buildroot Python.
 
-Three pages rotate automatically (no touch input on this hardware):
-"Now Playing" (artwork + core/game identity + system stats), and, when
-RetroAchievements is configured and matched a game, "RA Progress" and
-"RA Trophies" (paginated). A ResourceEvent unlock shows a popup overlay
-the moment the server reports one, on top of whatever page is current.
+Up to four pages rotate automatically (no touch input on this hardware):
+"Now Playing" (artwork + core/game identity + system stats), a full-screen
+"Box Art" page (when artwork is available), and, only while the *active
+core* is actually an RA-adapted one (RA_-prefixed CORENAME, or the odelot
+fork's live debug-log heartbeat - see is_ra_core_active()), "RA Progress"
+and "RA Trophies" (paginated). A stock core with a hash that merely
+happens to match something in RA's database (server-side cloud polling,
+independent of the core) does not get RA pages - see is_ra_core_active().
+An achievement unlock shows a popup overlay the moment the server reports
+one, on top of whatever page is current.
 """
 
+import hashlib
 import os
 import sys
 
@@ -137,24 +143,25 @@ def render_waiting(width, height, fonts, message) -> Image.Image:
     return img
 
 
-def render_now_playing(width, height, snapshot, system, storage, ra_status, art_image, fonts) -> Image.Image:
+def render_now_playing_info(panel_width, height, snapshot, system, storage, ra_status, fonts) -> Image.Image:
+    """Same content as the left (non-artwork) side of render_now_playing(),
+    as its own standalone image sized to just that panel. Used for the
+    Now Playing page's steady-state redraws (see main()): stats/clock
+    change almost every tick, but pushing them shouldn't require resending
+    the artwork panel sitting next to them - by far the largest payload on
+    this page - every single time too. Must stay pixel-identical to
+    render_now_playing()'s left side at the same panel_width, since the two
+    are pushed to the same screen region interchangeably (a full redraw via
+    render_now_playing(), or an incremental one via this function)."""
     f_title, f_body, f_small = fonts
-    img = Image.new("RGB", (width, height), BG)
+    img = Image.new("RGB", (panel_width, height), BG)
     d = ImageDraw.Draw(img)
 
     core = snapshot.get("system_name") or snapshot.get("core") or "Menu"
     game = snapshot.get("game") or ""
-    draw_header(d, width, core, game, fonts)
+    draw_header(d, panel_width, core, game, fonts)
 
-    text_x0 = 12
-    if art_image is not None:
-        art_x = width - art_image.width - 12
-        art_y = 48
-        img.paste(art_image, (art_x, art_y))
-        text_x1 = art_x - 12
-    else:
-        text_x1 = width - 12
-
+    text_x0, text_x1 = 12, panel_width - 12
     y = 52
     draw_stat_bar(d, "CPU", system.get("cpu_usage", 0.0), y, text_x0, text_x1, f_body)
     d.text((text_x1 - 44, y), f"{system.get('cpu_usage', 0.0):>4.0f}%", font=f_small, fill=FG)
@@ -181,7 +188,51 @@ def render_now_playing(width, height, snapshot, system, storage, ra_status, art_
                 f"{ra_status.unlocked}/{ra_status.total}  {ra_status.points_earned}/{ra_status.points_total}pt",
                 font=f_small, fill=GOLD)
 
-    d.text((12, height - 18), time.strftime("%H:%M:%S"), font=f_small, fill=DIM)
+    d.text((12, height - 18), time.strftime("%H:%M"), font=f_small, fill=DIM)
+    return img
+
+
+def render_art_panel(art_image, box_w, box_h) -> Image.Image:
+    """The artwork sidebar as its own fixed-size (box_w x box_h) image, so
+    it's always the same geometry to push regardless of the actual art's
+    (aspect-fit-thumbnailed) size - matches where render_now_playing()
+    pastes art_image directly onto the full frame at the same box origin."""
+    canvas = Image.new("RGB", (box_w, box_h), BG)
+    if art_image is not None:
+        canvas.paste(art_image, (0, 0))
+    return canvas
+
+
+def render_now_playing(width, height, snapshot, system, storage, ra_status, art_image, fonts) -> Image.Image:
+    """Full-frame Now Playing composite - just render_now_playing_info() +
+    render_art_panel() pasted at the same fixed offsets main()'s
+    steady-state partial-update path pushes them at independently, so a
+    full redraw (page just switched to, or a popup/art-identity change
+    forced one) and an incremental one always agree on the exact layout."""
+    has_art = art_image is not None
+    left_w = (width - ART_W - 24) if has_art else (width - 12)
+
+    img = Image.new("RGB", (width, height), BG)
+    img.paste(render_now_playing_info(left_w, height, snapshot, system, storage, ra_status, fonts), (0, 0))
+    if has_art:
+        art_x = width - ART_W - 12
+        img.paste(render_art_panel(art_image, ART_W, height - 60), (art_x, 48))
+    return img
+
+
+def render_boxart_fullscreen(width, height, art_path, fonts) -> Image.Image:
+    """Just the box art, filling as much of the screen as possible
+    (letterboxed, centered, aspect ratio preserved) - reloads art_path at
+    full display resolution rather than reusing the small ART_W sidebar
+    thumbnail already held for the Now Playing page."""
+    f_title, f_body, f_small = fonts
+    img = Image.new("RGB", (width, height), (0, 0, 0))
+    full = load_art_image(art_path, (width, height))
+    if full is not None:
+        ox, oy = (width - full.width) // 2, (height - full.height) // 2
+        img.paste(full, (ox, oy))
+    else:
+        ImageDraw.Draw(img).text((12, 12), "No artwork", font=f_body, fill=DIM)
     return img
 
 
@@ -207,11 +258,17 @@ def render_ra_summary(width, height, ra_status, fonts) -> Image.Image:
     y += 30
 
     if not ra_status.unlocks_tracked:
-        d.text((12, y), "View-only (stock MiSTer) - pair with", font=f_small, fill=DIM)
+        # Reaching this page at all already means is_ra_core_active()
+        # detected an RA-adapted core (see main()) - so unlocks_tracked
+        # being False here specifically means the odelot fork's debug-log
+        # heartbeat isn't confirming live tracking, most likely because
+        # debug=1 isn't set in /media/fat/retroachievements.cfg yet (the
+        # detection fell back to the RA_ CORENAME prefix instead).
+        d.text((12, y), "Live-tracking unconfirmed - set debug=1 in", font=f_small, fill=DIM)
         y += 16
-        d.text((12, y), "odelot/Main_MiSTer to record unlocks", font=f_small, fill=DIM)
+        d.text((12, y), "retroachievements.cfg to verify unlocks", font=f_small, fill=DIM)
 
-    d.text((12, height - 18), time.strftime("%H:%M:%S"), font=f_small, fill=DIM)
+    d.text((12, height - 18), time.strftime("%H:%M"), font=f_small, fill=DIM)
     return img
 
 
@@ -232,9 +289,43 @@ def render_ra_trophies(width, height, ra_status, achievements, page, pages, font
         y += max(row_h, 18)
 
     if not achievements:
-        d.text((12, y), "No achievements loaded yet.", font=f_body, fill=DIM)
+        if ra_status.total == 0:
+            d.text((12, y), "This game has no achievement set.", font=f_body, fill=DIM)
+        else:
+            d.text((12, y), "Loading achievements...", font=f_body, fill=DIM)
 
     return img
+
+
+def is_ra_core_active(ra_status) -> bool:
+    """True only when achievements earned right now would actually be
+    banked by an RA-adapted core - not just "the loaded ROM's hash happens
+    to match something in RA's database", which is all ra_status.game_matched
+    means (mister_status_server polls RA's cloud API server-side by hash,
+    independent of which core - stock or RA - is actually running).
+
+    Two signals, either is enough:
+
+      1. ra_status.unlocks_tracked - the odelot fork's own live debug-log
+         heartbeat (see ra_status.py's _unlocks_are_tracked() upstream).
+         The authoritative signal, but only available with debug=1 set in
+         /media/fat/retroachievements.cfg.
+
+      2. /tmp/CORENAME itself RA_-prefixed. mister_status_server strips
+         this prefix server-side before exposing core_raw (see
+         _read_corename_raw()), so it can't be checked from the exposed
+         JSON API - but this client runs directly on the MiSTer, so it can
+         just read the file itself. Covers the common case (an RA-adapted
+         core is loaded) even without debug=1 set.
+    """
+    if ra_status and ra_status.unlocks_tracked:
+        return True
+    try:
+        with open("/tmp/CORENAME") as f:
+            corename = f.read().strip()
+    except OSError:
+        return False
+    return corename.upper().startswith("RA_")
 
 
 def render_unlock_popup(base_img: Image.Image, ra_status, fonts) -> Image.Image:
@@ -268,8 +359,8 @@ def main():
     ap.add_argument("--brightness", type=int, default=80,
                      help="screen brightness 0-100 (default: %(default)s)")
     ap.add_argument("--page-seconds", type=float, default=DEFAULT_PAGE_SECONDS,
-                     help="how long each page (Now Playing / RA Progress / RA Trophies) "
-                          "stays up before rotating (default: %(default)s)")
+                     help="how long each page (Now Playing / Box Art / RA Progress / "
+                          "RA Trophies) stays up before rotating (default: %(default)s)")
     ap.add_argument("--config", default=os.path.join(_HERE, "config.ini"),
                      help="path to config.ini (default: %(default)s)")
     ap.add_argument("--once", action="store_true",
@@ -300,7 +391,7 @@ def main():
         ImageFont.truetype(FONT_REGULAR, 13),
     )
 
-    pages = ["now_playing", "ra_summary", "ra_trophies"]
+    pages = ["now_playing", "boxart", "ra_summary", "ra_trophies"]
     page_idx = 0
     page_deadline = 0.0
     trophies_page_num = 0
@@ -308,6 +399,13 @@ def main():
     art_identity = None  # (system_id, crc-or-name) of the art currently cached
     art_path = None
     popup_until = 0.0
+
+    # Steady-state redraw dedup (see the "transition" logic in the loop
+    # below) - what's believed to currently be physically on screen.
+    last_page_shown = None
+    last_full_hash = None       # ra_summary / ra_trophies / boxart (full-frame pages)
+    info_hash = None            # now_playing steady-state: info panel content
+    art_pushed_identity = None  # now_playing steady-state: art panel identity
 
     try:
         while True:
@@ -318,6 +416,11 @@ def main():
             if not connected:
                 comm.DisplayPILImage(render_waiting(width, height, fonts,
                                                       "Waiting for MiSTer status server..."))
+                # Invalidate the steady-state dedup cache: the screen now
+                # shows this waiting message, not whatever page it looked
+                # like last tick, so the next real page render must be a
+                # full redraw regardless of whether that page "changed".
+                last_page_shown = None
                 if args.once:
                     break
                 time.sleep(args.interval)
@@ -343,9 +446,11 @@ def main():
                 media_order = (config.arcade_subsystem_media_order if snapshot.get("is_arcade")
                                 else config.core_media_order)
 
+            force_full_redraw = False
             if identity != art_identity:
                 art_identity = identity
                 art_path = None
+                force_full_redraw = True  # see the transition comment below
                 if (ss.configured or libretro.configured) and (system_id or core_raw):
                     comm.DisplayPILImage(render_waiting(width, height, fonts, "Downloading artwork..."))
                     if has_game:
@@ -365,35 +470,94 @@ def main():
             art_image = load_art_image(art_path, (ART_W, height - 60))
 
             # -- page selection --
-            ra_pages_available = ra_status.game_matched
+            # RA pages require the *active core* to actually be RA-adapted -
+            # not just "the loaded ROM's hash happens to match something in
+            # RA's database", which is all game_matched means on its own
+            # (server-side cloud polling, independent of core) - see
+            # is_ra_core_active().
+            ra_pages_available = ra_status.game_matched and is_ra_core_active(ra_status)
+            has_art_page = art_path is not None
+
+            def _page_available(name):
+                if name in ("ra_summary", "ra_trophies"):
+                    return ra_pages_available
+                if name == "boxart":
+                    return has_art_page
+                return True
+
             if now >= page_deadline:
-                page_idx = (page_idx + 1) % len(pages)
-                if pages[page_idx] != "now_playing" and not ra_pages_available:
-                    page_idx = 0
+                for _ in range(len(pages)):
+                    page_idx = (page_idx + 1) % len(pages)
+                    if _page_available(pages[page_idx]):
+                        break
                 page_deadline = now + args.page_seconds
                 if pages[page_idx] == "ra_trophies":
                     trophies_page_num = (trophies_page_num + 1) % trophies_total_pages
 
             page = pages[page_idx]
-            if page == "now_playing":
-                frame = render_now_playing(width, height, snapshot, system, storage, ra_status, art_image, fonts)
-            elif page == "ra_summary":
-                frame = render_ra_summary(width, height, ra_status, fonts)
-            else:
-                achievements, cur_page, total_pages = ra.fetch_achievements_page(
-                    fetch_json, args.server, trophies_page_num)
-                trophies_total_pages = max(total_pages, 1)
-                frame = render_ra_trophies(width, height, ra_status, achievements, cur_page, total_pages, fonts)
 
             if new_unlock:
                 popup_until = now + POPUP_SECONDS
-            if now < popup_until:
-                frame = render_unlock_popup(frame, ra_status, fonts)
+            show_popup = now < popup_until
 
-            try:
-                comm.DisplayPILImage(frame)
-            except Exception as e:
-                logger.error("Display update failed: %s", e)
+            # A "transition" - the page just changed, a popup needs to be
+            # shown/refreshed, or the art identity just changed underneath
+            # us (force_full_redraw) - always gets a full, unconditional
+            # redraw. Anything else reaching the loop again with the *same*
+            # page as last tick is a steady-state refresh, handled below
+            # with per-region dedup so an unmoving screen doesn't keep
+            # resending identical content over this display's slow serial
+            # link (the actual root cause of the "changed too much" /
+            # "half the art visible" symptoms - Now Playing's artwork was,
+            # unconditionally, part of every single poll-interval redraw).
+            transition = (page != last_page_shown) or show_popup or force_full_redraw or args.once
+
+            if page == "now_playing" and not transition:
+                has_art = art_image is not None
+                left_w = (width - ART_W - 24) if has_art else (width - 12)
+                info_img = render_now_playing_info(left_w, height, snapshot, system, storage, ra_status, fonts)
+                h = hashlib.blake2b(info_img.tobytes(), digest_size=16).digest()
+                if h != info_hash:
+                    comm.DisplayPILImage(info_img, x=0, y=0, image_width=left_w, image_height=height)
+                    info_hash = h
+                if has_art and art_identity != art_pushed_identity:
+                    art_x = width - ART_W - 12
+                    art_canvas = render_art_panel(art_image, ART_W, height - 60)
+                    comm.DisplayPILImage(art_canvas, x=art_x, y=48, image_width=ART_W, image_height=height - 60)
+                    art_pushed_identity = art_identity
+            else:
+                if page == "now_playing":
+                    frame = render_now_playing(width, height, snapshot, system, storage, ra_status, art_image, fonts)
+                elif page == "ra_summary":
+                    frame = render_ra_summary(width, height, ra_status, fonts)
+                elif page == "ra_trophies":
+                    achievements, cur_page, total_pages = ra.fetch_achievements_page(
+                        fetch_json, args.server, trophies_page_num)
+                    trophies_total_pages = max(total_pages, 1)
+                    frame = render_ra_trophies(width, height, ra_status, achievements, cur_page, total_pages, fonts)
+                else:  # boxart
+                    frame = render_boxart_fullscreen(width, height, art_path, fonts)
+
+                if show_popup:
+                    frame = render_unlock_popup(frame, ra_status, fonts)
+
+                h = hashlib.blake2b(frame.tobytes(), digest_size=16).digest()
+                if transition or h != last_full_hash:
+                    try:
+                        comm.DisplayPILImage(frame)
+                    except Exception as e:
+                        logger.error("Display update failed: %s", e)
+                last_full_hash = h
+
+                if page == "now_playing":
+                    # This tick's full composite already painted the
+                    # current info + art content - seed both steady-state
+                    # caches so the next tick's partial-update path doesn't
+                    # immediately re-push what's already correctly on screen.
+                    info_hash = None  # differs in shape from info_img's own hash; let it recompute once, cheap
+                    art_pushed_identity = art_identity
+
+            last_page_shown = page
 
             if args.once:
                 break
