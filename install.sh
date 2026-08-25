@@ -19,8 +19,11 @@
 set -e
 
 SCRIPTS_DIR="/media/fat/Scripts"
-CONFIG_DIR="${SCRIPTS_DIR}/.config/mister_monitor"
-TARGET_DIR="${CONFIG_DIR}/turing_client"
+# Its own top-level namespace, not nested inside mister_monitor's - the
+# only relationship to that project is a runtime HTTP call to
+# mister_status_server.py, not a filesystem one, and MiSTer convention is
+# one tool = one .config/ directory regardless of runtime dependencies.
+TARGET_DIR="${SCRIPTS_DIR}/.config/mister_turing_client"
 STARTUP_FILE="/media/fat/linux/user-startup.sh"
 STARTUP_LINE="${TARGET_DIR}/start_turing_client.sh start"
 

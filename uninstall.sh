@@ -4,9 +4,9 @@
 # mister_turing_client — uninstaller
 #
 # Usage:
-#   bash /media/fat/Scripts/.config/mister_monitor/turing_client/uninstall.sh
+#   bash /media/fat/Scripts/.config/mister_turing_client/uninstall.sh
 
-TARGET_DIR="/media/fat/Scripts/.config/mister_monitor/turing_client"
+TARGET_DIR="/media/fat/Scripts/.config/mister_turing_client"
 STARTUP_FILE="/media/fat/linux/user-startup.sh"
 STARTUP_LINE="${TARGET_DIR}/start_turing_client.sh start"
 

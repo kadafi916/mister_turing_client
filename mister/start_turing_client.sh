@@ -8,7 +8,7 @@
 # session notes on os._exit() after 10 failed reconnect attempts) should
 # come back on its own rather than need a manual SSH restart.
 
-SCRIPT_DIR="/media/fat/Scripts/.config/mister_monitor/turing_client"
+SCRIPT_DIR="/media/fat/Scripts/.config/mister_turing_client"
 PID_FILE="/tmp/mister_turing_client.pid"
 LOG_FILE="/tmp/mister_turing_client.log"
 

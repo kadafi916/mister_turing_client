@@ -56,12 +56,14 @@ and RetroAchievements are both optional, off by default, and covered in
 "Artwork setup" and "Features" below - nothing above requires either.
 
 Afterward, everything lives at
-`/media/fat/Scripts/.config/mister_monitor/turing_client/` (matching
-`mister_status_server.py`'s own layout convention):
+`/media/fat/Scripts/.config/mister_turing_client/` - its own directory,
+not nested inside mister_monitor's, even though it talks to
+`mister_status_server.py` at runtime (an HTTP call, not a filesystem
+relationship - MiSTer convention is one tool, one `.config/` directory):
 
 ```
-bash /media/fat/Scripts/.config/mister_monitor/turing_client/start_turing_client.sh status
-bash /media/fat/Scripts/.config/mister_monitor/turing_client/uninstall.sh   # to remove it
+bash /media/fat/Scripts/.config/mister_turing_client/start_turing_client.sh status
+bash /media/fat/Scripts/.config/mister_turing_client/uninstall.sh   # to remove it
 ```
 
 ## Why this exists
@@ -208,7 +210,7 @@ bash install.sh
 ```
 
 This copies the source (not the vendored binary bundle) to
-`/media/fat/Scripts/.config/mister_monitor/turing_client/`, creates
+`/media/fat/Scripts/.config/mister_turing_client/`, creates
 `config.ini` from the template if one doesn't already exist, wires
 `mister/start_turing_client.sh start` into
 `/media/fat/linux/user-startup.sh` (additively - it won't touch any
@@ -220,7 +222,7 @@ present.
 a crash respawns on its own rather than needing a manual SSH restart, the
 way this session's actual USB-replug crash did before this existed.
 
-To remove it: `bash /media/fat/Scripts/.config/mister_monitor/turing_client/uninstall.sh`
+To remove it: `bash /media/fat/Scripts/.config/mister_turing_client/uninstall.sh`
 (stops the client, removes the autostart line, and asks before deleting
 `config.ini`/`artwork_cache/` - answering non-interactively, e.g. over a
 plain SSH exec with no TTY, defaults to keeping them).
