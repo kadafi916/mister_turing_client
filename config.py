@@ -30,6 +30,9 @@ class Config:
         self.ss_dev_pass = ss.get("ss_dev_pass", "").strip()
         self.region = ss.get("region", "us").strip() or "us"
 
+        libretro = parser["libretro"] if parser.has_section("libretro") else {}
+        self.libretro_base_url = libretro.get("base_url", "").strip()
+
         images = parser["images"] if parser.has_section("images") else {}
         self.core_media_order = images.get("core_media_order", DEFAULT_CORE_MEDIA_ORDER)
         self.arcade_subsystem_media_order = images.get(

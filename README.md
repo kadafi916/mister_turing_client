@@ -224,14 +224,34 @@ card space) keyed by CRC or system id, so nothing is re-fetched once seen.
 
 ## Alternatives considered for artwork
 
-ScreenScraper was kept as the sole source rather than adding a fallback:
-IGDB (self-service Twitch signup, but no CRC matching and weak arcade/MAME
-coverage) and TheGamesDB (same manual-forum-request friction as
-ScreenScraper, no better) were considered and set aside - every mainstream
-retro frontend (EmulationStation, Batocera, Recalbox) independently landed
-on ScreenScraper for the same reason: it's the one built for CRC-based,
-arcade-heavy emulation scraping, which is what a MiSTer library actually
-needs.
+ScreenScraper is the primary source: IGDB (self-service Twitch signup, but
+no CRC matching and weak arcade/MAME coverage) and TheGamesDB (same
+manual-forum-request friction as ScreenScraper, no better) were considered
+and set aside - every mainstream retro frontend (EmulationStation,
+Batocera, Recalbox) independently landed on ScreenScraper for the same
+reason: it's the one built for CRC-based, arcade-heavy emulation scraping,
+which is what a MiSTer library actually needs.
+
+That said, ScreenScraper's artwork endpoints need a *developer* key
+(`ss_dev_user`/`ss_dev_pass`), issued only by manual forum request and
+approval - a real bottleneck in practice (see "Credential gotchas" below).
+`libretro_thumbs.py` is a fallback source that sidesteps this entirely: it
+talks to a self-hosted [`libretro-artwork-api`](../libretro-artwork-api)
+instance (a small stdlib-only HTTP service, run separately - see that
+project's own README) serving a local git-cloned mirror of
+[libretro-thumbnails](https://github.com/libretro-thumbnails). No
+credentials, no rate limit, no forum. The tradeoff: only box
+art/snap/title art per *game* (no wheel art, marquees, fanart, or
+system/core-level art for the idle screen - see `libretro_thumbs.py`'s
+docstring), and only for whatever systems have actually been
+`git clone`d into that service's data directory.
+
+Enable it by setting `[libretro] base_url` in `config.ini` to the running
+instance's address (e.g. `http://192.168.1.9:8478`). It's tried
+automatically whenever ScreenScraper is unconfigured, or configured but
+turns up no match for a given game - `ss.configured` and
+`libretro.configured` are independent, so either one alone, both, or
+neither is a valid setup (artwork just stays off with neither).
 
 ## A `mister_status_server.py` bug this surfaced
 

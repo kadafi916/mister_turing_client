@@ -48,6 +48,7 @@ from turing_lcd.log import logger
 
 from config import Config
 from screenscraper import ScreenScraperClient
+from libretro_thumbs import LibretroThumbsClient
 import screenscraper_systems
 import retroachievements as ra
 
@@ -277,8 +278,11 @@ def main():
 
     config = Config(args.config)
     ss = ScreenScraperClient(config, ARTWORK_CACHE_DIR)
-    if not ss.configured:
-        logger.info("ScreenScraper not configured (config.ini) - artwork disabled")
+    libretro = LibretroThumbsClient(config.libretro_base_url, ARTWORK_CACHE_DIR)
+    if not ss.configured and not libretro.configured:
+        logger.info("No artwork source configured (config.ini) - artwork disabled")
+    elif not ss.configured:
+        logger.info("ScreenScraper not configured (config.ini) - using libretro-thumbnails fallback only")
     unlock_tracker = ra.UnlockTracker()
 
     logger.info("Opening display on %s ...", args.port)
@@ -342,11 +346,20 @@ def main():
             if identity != art_identity:
                 art_identity = identity
                 art_path = None
-                if ss.configured and system_id:
+                if (ss.configured or libretro.configured) and (system_id or core_raw):
                     comm.DisplayPILImage(render_waiting(width, height, fonts, "Downloading artwork..."))
                     if has_game:
-                        art_path = ss.fetch_game_art(system_id, rom_details, media_order)
-                    else:
+                        if ss.configured and system_id:
+                            art_path = ss.fetch_game_art(system_id, rom_details, media_order)
+                        if not art_path and libretro.configured:
+                            # Fallback: no credentials, no rate limit, but
+                            # game art only - see libretro_thumbs.py.
+                            title = rom_details.get("search_name") or snapshot.get("game") or ""
+                            cache_key = rom_details.get("crc32") or rom_details.get("search_name") or ""
+                            art_path = libretro.fetch_game_art(core_raw, cache_key, title, media_order)
+                    elif ss.configured and system_id:
+                        # libretro-thumbnails has no system/core-level art
+                        # equivalent - see libretro_thumbs.py's docstring.
                         art_path = ss.fetch_system_art(system_id, system_id, media_order)
 
             art_image = load_art_image(art_path, (ART_W, height - 60))
