@@ -5,8 +5,8 @@ USB smart screen (the ones `turing-smart-screen-python` drives), talking
 directly to `mister_status_server.py` — the same hardware-agnostic JSON API
 the [MiSTer_monitor](https://github.com/chipster6502/MiSTer_monitor) ESP32
 firmware uses. This is a separate integration path, not a port of that
-firmware: it runs as a plain Python client instead of on-panel firmware.
-See the parent conversation for the full reasoning; short version below.
+firmware: it runs as a plain Python client instead of on-panel firmware -
+see "Why this exists" below for the reasoning.
 
 ## Why this exists
 
@@ -154,16 +154,40 @@ plain SSH exec with no TTY, defaults to keeping them).
 
 ## Features
 
+Four pages rotate automatically (no touch input on this hardware, so pages
+cycle on a timer via `--page-seconds` rather than being tapped through):
+
 - **Now Playing** — core/game identity, CPU/memory bars, uptime, SD usage,
-  and game/core artwork fetched on demand from ScreenScraper (see below).
-- **RetroAchievements** — progress, points and hardcore breakdown, and a
-  paginated trophy list, on two auto-rotating pages (no touch input on this
-  hardware, so pages cycle on a timer rather than being tapped through).
-  An unlock popup overlays whatever page is showing the moment the server
-  reports a new one. Entirely server-side — see
-  `docs/configuration.md#retroachievements` in MiSTer_monitor for how to
-  set up `ra_credentials.ini` on the MiSTer; this client only renders what
-  `/status/retroachievements` already reports.
+  and game/core artwork fetched on demand from ScreenScraper and/or a
+  self-hosted libretro-thumbnails mirror (see "Artwork setup" below).
+  Arcade content is handled specially: MiSTer's Arcade core reports a
+  different `core_raw` per loaded `.mra` (its own MAME-style setname, e.g.
+  `rtype`, `tmnt2`) rather than a stable "this is arcade" identifier, so
+  artwork lookups key off the snapshot's own `is_arcade` flag instead.
+- **Box Art** — the same artwork full-screen, letterboxed and centered at
+  native display resolution, when any is available.
+- **RA Progress** / **RA Trophies** — progress, points/hardcore breakdown,
+  and a paginated trophy list. Shown only while the *active core* is
+  actually RA-adapted (confirmed via the odelot fork's live debug-log
+  heartbeat, or - when that's not enabled - `/tmp/CORENAME` itself being
+  `RA_`-prefixed, checked directly since this client runs on-device and
+  `mister_status_server` strips that prefix before exposing `core_raw`).
+  A stock core whose loaded ROM merely hashes to something in RA's
+  database (server-side cloud polling, independent of core) does not get
+  these pages - see `is_ra_core_active()`. An unlock popup overlays
+  whatever page is showing the moment the server reports a new one.
+  Entirely server-side — see `docs/configuration.md#retroachievements` in
+  MiSTer_monitor for how to set up `ra_credentials.ini` on the MiSTer;
+  this client only renders what `/status/retroachievements` already
+  reports.
+
+Redraws are split into independently-updated regions rather than
+resending the whole frame every poll tick - the artwork panel (by far the
+largest payload over this display's slow serial link) only gets re-pushed
+when the game/system identity actually changes, not on every tick just
+because a stat number ticked over. A full-frame push happens only on a
+genuine transition: a page change, an achievement popup, or an artwork
+change.
 
 ### RetroAchievements: reading `unlocks_tracked` correctly
 
@@ -236,7 +260,7 @@ That said, ScreenScraper's artwork endpoints need a *developer* key
 (`ss_dev_user`/`ss_dev_pass`), issued only by manual forum request and
 approval - a real bottleneck in practice (see "Credential gotchas" below).
 `libretro_thumbs.py` is a fallback source that sidesteps this entirely: it
-talks to a self-hosted [`libretro-artwork-api`](../libretro-artwork-api)
+talks to a self-hosted [`libretro-artwork-api`](https://github.com/kadafi916/libretro-artwork-api)
 instance (a small stdlib-only HTTP service, run separately - see that
 project's own README) serving a local git-cloned mirror of
 [libretro-thumbnails](https://github.com/libretro-thumbnails). No
@@ -247,11 +271,12 @@ docstring), and only for whatever systems have actually been
 `git clone`d into that service's data directory.
 
 Enable it by setting `[libretro] base_url` in `config.ini` to the running
-instance's address (e.g. `http://192.168.1.9:8478`). It's tried
-automatically whenever ScreenScraper is unconfigured, or configured but
-turns up no match for a given game - `ss.configured` and
-`libretro.configured` are independent, so either one alone, both, or
-neither is a valid setup (artwork just stays off with neither).
+instance's address (e.g. `http://192.168.1.100:8478` - wherever you've
+deployed it on your own network). It's tried automatically whenever
+ScreenScraper is unconfigured, or configured but turns up no match for a
+given game - `ss.configured` and `libretro.configured` are independent,
+so either one alone, both, or neither is a valid setup (artwork just
+stays off with neither).
 
 ## A `mister_status_server.py` bug this surfaced
 
@@ -302,4 +327,4 @@ Worth knowing before you re-hit these:
 Touch-equivalent navigation doesn't exist on this hardware (output-only
 screen), so further pages would still need to be timer-cycled. Not yet
 built: the extension-based system disambiguation mentioned above.
-Page rotation speed is configurable via `--page-seconds` (default 12s).
+Page rotation speed is configurable via `--page-seconds` (default 25s).

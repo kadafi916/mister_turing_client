@@ -24,12 +24,12 @@ region=us
 
 [libretro]
 ; Optional fallback artwork source: a self-hosted libretro-artwork-api
-; instance (see ../libretro-artwork-api in this workspace) - a local mirror
-; of libretro-thumbnails. Needs no credentials, has no rate limit, and is
-; tried automatically whenever ScreenScraper is unconfigured or has no
-; match for a game. Only covers game art (box art / snap / title), not
+; instance (https://github.com/kadafi916/libretro-artwork-api) - a local
+; mirror of libretro-thumbnails. Needs no credentials, has no rate limit,
+; and is tried automatically whenever ScreenScraper is unconfigured or has
+; no match for a game. Only covers game art (box art / snap / title), not
 ; system/core art. Leave blank to disable.
-;base_url=http://192.168.1.9:8478
+;base_url=http://<wherever-you-deployed-it>:8478
 
 ; Optional: override which media types are tried, and in what order, for
 ; each context. Uncomment to customize - see README.md for the token list.
