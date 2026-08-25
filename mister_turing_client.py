@@ -76,7 +76,7 @@ POPUP_BG = (26, 22, 10)
 
 ART_W = 200  # artwork panel width on the Now Playing page
 
-DEFAULT_PAGE_SECONDS = 12.0
+DEFAULT_PAGE_SECONDS = 25.0
 POPUP_SECONDS = 6.0
 
 
@@ -399,6 +399,14 @@ def main():
     art_identity = None  # (system_id, crc-or-name) of the art currently cached
     art_path = None
     popup_until = 0.0
+    # Carried across an "identity_unconfirmed" tick (see below) so the very
+    # first poll - unlikely but possible - has something defined.
+    core_raw = ""
+    system_id = ""
+    has_game = False
+    libretro_system = ""
+    identity = (None, "__system__")
+    media_order = ""
 
     # Steady-state redraw dedup (see the "transition" logic in the loop
     # below) - what's believed to currently be physically on screen.
@@ -433,30 +441,47 @@ def main():
             new_unlock = unlock_tracker.check(ra_status)
 
             # -- artwork: fetch once per identity change, cache does the rest --
-            core_raw = snapshot.get("core_raw") or ""
-            system_name = rom_details.get("artwork_system") or snapshot.get("system_name") or ""
-            system_id = screenscraper_systems.get_system_id(system_name, core_raw)
-            has_game = bool(snapshot.get("game")) and rom_details.get("available")
+            # mister_status_server can report rom_details with
+            # detection_method "identity_unconfirmed" - a deliberate,
+            # documented transient (its own source: "the OSD cursor is
+            # resting on another title while the loaded game keeps
+            # running... transient by nature, never cached") that reports
+            # available=False even though a game is still genuinely
+            # running. Treating that as "no game loaded" - which
+            # has_game's naive available-flag check would do - spuriously
+            # wipes whatever art/identity was already correctly showing:
+            # confirmed real symptom, art loaded correctly then vanished
+            # on the very next poll. So on this tick specifically, skip
+            # recomputing identity/has_game/etc entirely and keep
+            # whatever was last established - core_raw/system_id/has_game
+            # simply keep their previous values (see their pre-loop
+            # initialization above).
+            if rom_details.get("detection_method") != "identity_unconfirmed":
+                core_raw = snapshot.get("core_raw") or ""
+                system_name = rom_details.get("artwork_system") or snapshot.get("system_name") or ""
+                system_id = screenscraper_systems.get_system_id(system_name, core_raw)
+                has_game = bool(snapshot.get("game")) and rom_details.get("available")
 
-            # For arcade content, MiSTer's core_raw is the *loaded .mra's own
-            # setname* ("rtype", "tmnt2", "invaders", ...) - a different
-            # value per game, never a stable "this is arcade" identifier
-            # (confirmed via real logs: every arcade game failed with
-            # "unmapped system: <its own setname>"). screenscraper_systems's
-            # id resolution already tolerates this by falling back to
-            # system_name ("Arcade" -> id 75), but libretro_thumbs.py's API
-            # only understands core_raw-shaped keys - so override it here
-            # using the snapshot's own is_arcade flag, verified against the
-            # real artwork API to resolve arcade titles correctly.
-            libretro_system = "arcade" if snapshot.get("is_arcade") else core_raw
+                # For arcade content, MiSTer's core_raw is the *loaded
+                # .mra's own setname* ("rtype", "tmnt2", "invaders", ...) -
+                # a different value per game, never a stable "this is
+                # arcade" identifier (confirmed via real logs: every arcade
+                # game failed with "unmapped system: <its own setname>").
+                # screenscraper_systems's id resolution already tolerates
+                # this by falling back to system_name ("Arcade" -> id 75),
+                # but libretro_thumbs.py's API only understands
+                # core_raw-shaped keys - so override it here using the
+                # snapshot's own is_arcade flag, verified against the real
+                # artwork API to resolve arcade titles correctly.
+                libretro_system = "arcade" if snapshot.get("is_arcade") else core_raw
 
-            if has_game:
-                identity = (system_id, rom_details.get("crc32") or rom_details.get("search_name") or "")
-                media_order = config.arcade_media_order if snapshot.get("is_arcade") else config.game_media_order
-            else:
-                identity = (system_id, "__system__")
-                media_order = (config.arcade_subsystem_media_order if snapshot.get("is_arcade")
-                                else config.core_media_order)
+                if has_game:
+                    identity = (system_id, rom_details.get("crc32") or rom_details.get("search_name") or "")
+                    media_order = config.arcade_media_order if snapshot.get("is_arcade") else config.game_media_order
+                else:
+                    identity = (system_id, "__system__")
+                    media_order = (config.arcade_subsystem_media_order if snapshot.get("is_arcade")
+                                    else config.core_media_order)
 
             # libretro-thumbnails only ever has *game* art (see
             # libretro_thumbs.py's docstring) - so with ScreenScraper
