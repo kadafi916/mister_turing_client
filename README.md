@@ -292,10 +292,15 @@ own path with nothing after it (rather than `zip/file.ext`), so that
 computation comes out empty — and every one of
 `get_zip_file_info_enhanced()`'s five matching strategies is derived from
 that empty string, so none can ever match. There was no fallback for the
-unambiguous case (a single-entry zip). Fixed on the
-`fix/zip-single-entry-no-internal-path` branch of the `MiSTer_monitor`
-checkout (not this repo — that file belongs to the separate AGPL server
-project) and deployed to the test MiSTer; worth upstreaming as a PR.
+unambiguous case (a single-entry zip).
+
+This lives in `mister_status_server.py`, not this repo — that file
+belongs to the separate AGPL [MiSTer_monitor](https://github.com/chipster6502/MiSTer_monitor)
+server project, so the fix was submitted upstream:
+[chipster6502/MiSTer_monitor#18](https://github.com/chipster6502/MiSTer_monitor/pull/18).
+Until that's merged, the fix is available on
+[this branch](https://github.com/kadafi916/MiSTer_monitor/tree/fix/zip-single-entry-no-internal-path)
+if you're hitting this now.
 
 If RA/artwork silently produce nothing for a specific game despite
 working for others, check `/status/rom/details`'s `error` field for this
