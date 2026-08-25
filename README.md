@@ -1,7 +1,8 @@
 # mister_turing_client
 
 A status HUD for MiSTer FPGA that runs on a Turing/XuanFang/UsbMonitor-style
-USB smart screen (the ones `turing-smart-screen-python` drives), talking
+USB smart screen (the ones [`turing-smart-screen-python`](https://github.com/mathoudebine/turing-smart-screen-python)
+drives), talking
 directly to `mister_status_server.py` — the same hardware-agnostic JSON API
 the [MiSTer_monitor](https://github.com/chipster6502/MiSTer_monitor) ESP32
 firmware uses. This is a separate integration path, not a port of that
@@ -79,7 +80,8 @@ MiSTer_monitor's display sketches run as firmware on an ESP32 wired
 directly to a bare SPI/parallel TFT panel - that's how the CYD works. The
 Turing/XuanFang family of screens is a different kind of device entirely:
 each has its own onboard MCU (commonly a WCH CH552T) speaking a fixed
-USB-serial protocol, reverse engineered by the `turing-smart-screen-python`
+USB-serial protocol, reverse engineered by the
+[`turing-smart-screen-python`](https://github.com/mathoudebine/turing-smart-screen-python)
 project. There's no SPI bus to wire an ESP32 to and no equivalent
 "board_hal" swap — so instead of a firmware port, this is a small Python
 client, structured the same way `mister_status_server.py` was already
