@@ -68,14 +68,22 @@ bash /media/fat/Scripts/.config/mister_turing_client/uninstall.sh   # to remove 
 
 ## Why this exists
 
+MiSTer_monitor is built around the CYD (Cheap Yellow Display) - a good,
+cheap choice, but not the cheapest option when you already own something
+else. This started from the opposite direction: an AliExpress-bought
+Turing/XuanFang-style USB smart screen already sitting around unused,
+looking for a reason to exist, rather than a CYD bought specifically to
+run MiSTer_monitor.
+
 MiSTer_monitor's display sketches run as firmware on an ESP32 wired
-directly to a bare SPI/parallel TFT panel. The Turing/XuanFang family of
-screens is a different kind of device: each has its own onboard MCU
-(commonly a WCH CH552T) speaking a fixed USB-serial protocol, reverse
-engineered by the `turing-smart-screen-python` project. There's no SPI bus
-to wire an ESP32 to and no equivalent "board_hal" swap — so instead of a
-firmware port, this is a small Python client, structured the same way
-`mister_status_server.py` was already designed to be consumed: poll its
+directly to a bare SPI/parallel TFT panel - that's how the CYD works. The
+Turing/XuanFang family of screens is a different kind of device entirely:
+each has its own onboard MCU (commonly a WCH CH552T) speaking a fixed
+USB-serial protocol, reverse engineered by the `turing-smart-screen-python`
+project. There's no SPI bus to wire an ESP32 to and no equivalent
+"board_hal" swap — so instead of a firmware port, this is a small Python
+client, structured the same way `mister_status_server.py` was already
+designed to be consumed: poll its
 JSON, render, push pixels.
 
 ## Why the odd `pylibs/` + `vendor_libs/` layout
