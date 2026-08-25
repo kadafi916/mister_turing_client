@@ -89,11 +89,17 @@ re-verify (`python3 mister_turing_client.py --once`) after one.
 
 ```
 mister_turing_client.py   entry point - poll + render + push, in a loop
+screenscraper.py           ScreenScraper artwork client
+screenscraper_systems.py   MiSTer core name -> ScreenScraper systemeid table
+retroachievements.py       thin client over mister_status_server.py's RA endpoints
+config.py                  config.ini loader
 turing_lcd/                trimmed vendored slice of turing-smart-screen-python's
                             library/lcd (LcdCommRevA + base class), GPL-3.0-or-later
 fonts/                      RobotoMono (Apache-2.0, from turing-smart-screen-python's res/)
 pylibs/                     vendored Pillow, numpy, pyserial (see above)
 vendor_libs/                extra .so files Pillow/numpy need beyond MiSTer's own
+mister/                     start_turing_client.sh (installed on-device by install.sh)
+install.sh / uninstall.sh   on-device install/autostart - see below
 ```
 
 ## Usage
@@ -110,6 +116,41 @@ Defaults assume `mister_status_server.py` is running on the same MiSTer
 
 With no `mister_status_server` reachable, it shows a "Waiting for MiSTer
 status server..." screen and keeps polling rather than crashing.
+
+## Installing on MiSTer (autostart + auto-recover)
+
+Running `mister_turing_client.py` directly, as above, is a manual foreground
+process - it doesn't survive a reboot and won't come back if it ever hard-exits
+(e.g. a USB replug that outlasts its 10-attempt reconnect window; observed
+once in practice - `os._exit()` on that path means even a broad top-level
+`try/except` in the main loop can't catch it). `install.sh` sets up the
+same pattern `mister_status_server.py` already uses on this device
+(`MiSTer/install.sh` in the `MiSTer_monitor` repo) plus a respawn loop:
+
+```
+# on the MiSTer, with this repo copied over (pylibs/ and vendor_libs/ must
+# already be in place - see "Why the odd pylibs/ + vendor_libs/ layout"
+# above; install.sh does not assemble them)
+bash install.sh
+```
+
+This copies the source (not the vendored binary bundle) to
+`/media/fat/Scripts/.config/mister_monitor/turing_client/`, creates
+`config.ini` from the template if one doesn't already exist, wires
+`mister/start_turing_client.sh start` into
+`/media/fat/linux/user-startup.sh` (additively - it won't touch any
+existing lines there), and starts it immediately if the runtime bundle is
+present.
+
+`start_turing_client.sh {start|stop|restart|status}` manages it afterward -
+`start` wraps the client in a `while true; do ...; sleep 2; done` loop, so
+a crash respawns on its own rather than needing a manual SSH restart, the
+way this session's actual USB-replug crash did before this existed.
+
+To remove it: `bash /media/fat/Scripts/.config/mister_monitor/turing_client/uninstall.sh`
+(stops the client, removes the autostart line, and asks before deleting
+`config.ini`/`artwork_cache/` - answering non-interactively, e.g. over a
+plain SSH exec with no TTY, defaults to keeping them).
 
 ## Features
 
