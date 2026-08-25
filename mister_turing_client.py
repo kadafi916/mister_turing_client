@@ -438,6 +438,18 @@ def main():
             system_id = screenscraper_systems.get_system_id(system_name, core_raw)
             has_game = bool(snapshot.get("game")) and rom_details.get("available")
 
+            # For arcade content, MiSTer's core_raw is the *loaded .mra's own
+            # setname* ("rtype", "tmnt2", "invaders", ...) - a different
+            # value per game, never a stable "this is arcade" identifier
+            # (confirmed via real logs: every arcade game failed with
+            # "unmapped system: <its own setname>"). screenscraper_systems's
+            # id resolution already tolerates this by falling back to
+            # system_name ("Arcade" -> id 75), but libretro_thumbs.py's API
+            # only understands core_raw-shaped keys - so override it here
+            # using the snapshot's own is_arcade flag, verified against the
+            # real artwork API to resolve arcade titles correctly.
+            libretro_system = "arcade" if snapshot.get("is_arcade") else core_raw
+
             if has_game:
                 identity = (system_id, rom_details.get("crc32") or rom_details.get("search_name") or "")
                 media_order = config.arcade_media_order if snapshot.get("is_arcade") else config.game_media_order
@@ -473,7 +485,7 @@ def main():
                             # game art only - see libretro_thumbs.py.
                             title = rom_details.get("search_name") or snapshot.get("game") or ""
                             cache_key = rom_details.get("crc32") or rom_details.get("search_name") or ""
-                            art_path = libretro.fetch_game_art(core_raw, cache_key, title, media_order)
+                            art_path = libretro.fetch_game_art(libretro_system, cache_key, title, media_order)
                     elif ss.configured and system_id:
                         # libretro-thumbnails has no system/core-level art
                         # equivalent - see libretro_thumbs.py's docstring.
