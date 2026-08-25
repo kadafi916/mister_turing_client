@@ -4,12 +4,15 @@
 # mister_turing_client — installer
 #
 # Mirrors MiSTer_monitor's own MiSTer/install.sh pattern (proven working on
-# this device for the server half) - see README.md for why the vendored
-# pylibs/ and vendor_libs/ bundle isn't something this script assembles.
+# this device for the server half). Doesn't assemble the vendored pylibs/ +
+# vendor_libs/ bundle itself - run build_pylibs.sh first (once, needs
+# network access) if it's not already in place; see README.md for why
+# that's a separate step.
 #
 # Usage: copy this whole repo to your MiSTer (e.g. to
 #   /media/fat/mister_turing_client_install/), then run:
 #
+#   bash /media/fat/mister_turing_client_install/build_pylibs.sh   # once
 #   bash /media/fat/mister_turing_client_install/install.sh
 #
 
@@ -52,9 +55,11 @@ mkdir -p "${TARGET_DIR}"
 # ===== Copy source files (not the vendored binary bundle - see below) =====
 echo "Installing source files..."
 for f in mister_turing_client.py screenscraper.py screenscraper_systems.py \
-         retroachievements.py config.py README.md LICENSE; do
+         libretro_thumbs.py retroachievements.py config.py \
+         build_pylibs.sh uninstall.sh README.md TROUBLESHOOTING.md LICENSE; do
     cp "${INSTALLER_DIR}/${f}" "${TARGET_DIR}/"
 done
+chmod +x "${TARGET_DIR}/build_pylibs.sh" "${TARGET_DIR}/uninstall.sh"
 cp -r "${INSTALLER_DIR}/turing_lcd" "${TARGET_DIR}/"
 cp -r "${INSTALLER_DIR}/fonts" "${TARGET_DIR}/"
 
@@ -73,17 +78,17 @@ chmod +x "${TARGET_DIR}/start_turing_client.sh"
 # ===== Vendored binary dependencies =====
 # pylibs/ (Pillow/numpy/pyserial) and vendor_libs/ (the .so files those need
 # beyond what MiSTer's Buildroot Python ships) are gitignored - they're
-# large prebuilt binaries, not source. See README.md "Why the odd pylibs/ +
-# vendor_libs/ layout" for the exact piwheels.org/deb.debian.org recipe.
-# An existing bundle is left untouched (never overwritten by this script);
-# a missing one just gets a loud warning rather than a silent later failure.
+# large prebuilt binaries, not source. build_pylibs.sh assembles them (run
+# it once, needs network access) - see README.md "Why the odd pylibs/ +
+# vendor_libs/ layout" for the full reasoning. An existing bundle is left
+# untouched (never overwritten by this script); a missing one just gets a
+# loud warning rather than a silent later failure.
 if [ ! -d "${TARGET_DIR}/pylibs" ] || [ ! -d "${TARGET_DIR}/vendor_libs" ]; then
     echo
     echo "WARNING: pylibs/ and/or vendor_libs/ not found at ${TARGET_DIR}."
-    echo "         The client will not run without them - see README.md for"
-    echo "         how to assemble the bundle, then copy it into place and"
-    echo "         re-run this installer (or just run start_turing_client.sh"
-    echo "         start once it's there)."
+    echo "         The client will not run without them. Run:"
+    echo "           bash ${TARGET_DIR}/build_pylibs.sh"
+    echo "         then run start_turing_client.sh start."
     echo
 fi
 

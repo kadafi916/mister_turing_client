@@ -57,29 +57,46 @@ This was verified end-to-end on the real device before writing the client:
 and the actual `image_to_RGB565` byte-packing via numpy + the vendored
 `libopenblas`.
 
-### Reproducing / updating the bundle
+### Building the bundle
 
 ```
-pylibs/PIL      <- unzip pillow-11.2.1-cp39-cp39-linux_armv7l.whl from piwheels.org, take PIL/
-pylibs/numpy    <- unzip numpy-2.0.2-cp39-cp39-linux_armv7l.whl from piwheels.org, take numpy/
-pylibs/serial   <- pip install --target=pylibs pyserial   (pure-Python wheel, installs directly)
+bash build_pylibs.sh
+```
+
+Run once on the MiSTer itself (needs network access), before `install.sh`.
+Fetches the exact pinned wheels/`.deb`s below and assembles `pylibs/` +
+`vendor_libs/` automatically - no manual unzipping, no pip, no compiler.
+Verified end-to-end on real hardware: a fresh run's output round-trips a
+real JPEG encode/decode through Pillow and a real array conversion
+through numpy (see the script's own comments for exactly what it fetches
+and why).
+
+`.deb`s are fetched from [snapshot.debian.org](https://snapshot.debian.org)
+by content hash rather than `deb.debian.org`/`security.debian.org`'s live
+pool, which drops old bullseye point-release versions once superseded -
+snapshot.debian.org keeps every version forever, so these exact pinned
+files stay fetchable indefinitely.
+
+What it assembles, for reference:
+
+```
+pylibs/PIL      <- pillow-11.2.1-cp39-cp39-linux_armv7l.whl (piwheels.org), PIL/
+pylibs/numpy    <- numpy-2.0.2-cp39-cp39-linux_armv7l.whl (piwheels.org), numpy/
+pylibs/serial   <- pyserial-3.5-py2.py3-none-any.whl (PyPI, pure-Python), serial/
 
 vendor_libs/    <- .so files extracted from these Debian bullseye armhf .debs:
-  libjpeg62-turbo_2.0.6-4_armhf.deb                (deb.debian.org)
-  libopenjp2-7_2.4.0-3+deb11u3_armhf.deb           (security.debian.org)
-  libxcb1_1.14-3_armhf.deb                         (deb.debian.org)
-  libxau6_1.0.9-1_armhf.deb                        (deb.debian.org)
-  libxdmcp6_1.1.2-3_armhf.deb                      (deb.debian.org)
-  libbsd0_0.11.3-1+deb11u1_armhf.deb               (deb.debian.org)
-  libmd0_1.0.3-3_armhf.deb                         (deb.debian.org)
-  libopenblas0-pthread_0.3.13+ds-3+deb11u1_armhf.deb (deb.debian.org)
+  libjpeg62-turbo, libopenjp2-7, libxcb1, libxau6, libxdmcp6,
+  libbsd0, libmd0, libopenblas0-pthread
 ```
 
-Before trusting a newer wheel/package, re-check its glibc floor:
+Before trusting a newer wheel/package (`build_pylibs.sh`'s own trailing
+comment has the exact commands), re-check its glibc floor -
 `objdump -T <file>.so | grep -oE 'GLIBC_[0-9]+\.[0-9]+' | sort -V | tail -1`
-must be ≤ MiSTer's `ldd --version` (2.31 as of this writing), and its
+must be ≤ MiSTer's `ldd --version` (2.31 as of this writing) - and its
 `NEEDED` entries (`objdump -p <file>.so | grep NEEDED`) must all resolve
-against either MiSTer's own `/usr/lib` or `vendor_libs/`.
+against either MiSTer's own `/usr/lib` or `vendor_libs/`. `objdump` isn't
+on MiSTer itself; run this check on a Linux box with `binutils` against
+the downloaded file before deploying it.
 
 **Caveat**: this bundle lives under `/media/fat`, which persists across
 reboots but is not guaranteed to survive a MiSTer main-binary/OS update —
