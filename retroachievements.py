@@ -87,14 +87,19 @@ class Achievement:
     badge_url: str = ""
 
     @classmethod
-    def from_json(cls, d: dict) -> "Achievement":
+    def from_flat(cls, d: dict, i: int) -> "Achievement":
+        """Parses one row out of get_ra_achievements()'s flat-JSON contract
+        (ra_status.py: "a{i}_id / a{i}_title / a{i}_points / a{i}_unlocked /
+        a{i}_hardcore for i in [0, count)") - deliberately flat rather than
+        a nested list, to keep the ESP32 firmware's substring key matcher
+        simple. per_page is server-clamped to single digits so a1_ can never
+        be confused with a10_."""
         return cls(
-            title=d.get("title") or d.get("Title", ""),
-            description=d.get("description") or d.get("Description", ""),
-            points=d.get("points") or d.get("Points", 0),
-            unlocked=bool(d.get("unlocked") or d.get("Unlocked")),
-            hardcore=bool(d.get("hardcore") or d.get("HardcoreUnlocked")),
-            badge_url=d.get("badge_url") or d.get("BadgeURL", ""),
+            title=d.get(f"a{i}_title", ""),
+            description=d.get(f"a{i}_desc", ""),
+            points=d.get(f"a{i}_points", 0),
+            unlocked=bool(d.get(f"a{i}_unlocked")),
+            hardcore=bool(d.get(f"a{i}_hardcore")),
         )
 
 
@@ -124,9 +129,16 @@ def fetch_status(fetch_json, base_url: str) -> RAStatus:
 
 
 def fetch_achievements_page(fetch_json, base_url: str, page: int = 0):
-    """Returns (achievements: list[Achievement], page, pages)."""
+    """Returns (achievements: list[Achievement], page, pages).
+
+    /status/retroachievements/achievements uses the same flat-JSON
+    contract as the ESP32 firmware's page-6 subpages (see
+    Achievement.from_flat()), not a nested "achievements" list - confirmed
+    against a real response and ra_status.py's own get_ra_achievements()
+    docstring. count says exactly how many aN_* rows are present."""
     data = fetch_json(base_url, f"/status/retroachievements/achievements?page={page}")
     if not data:
         return [], 0, 0
-    items = data.get("achievements") or []
-    return [Achievement.from_json(a) for a in items], data.get("page", 0), data.get("pages", 0)
+    count = data.get("count", 0)
+    achievements = [Achievement.from_flat(data, i) for i in range(count)]
+    return achievements, data.get("page", 0), data.get("pages", 0)
