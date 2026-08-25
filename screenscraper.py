@@ -119,6 +119,20 @@ class ScreenScraperClient:
         except Exception as e:
             logger.debug("ScreenScraper %s: %s", endpoint, e)
             return None
+        # Reproduced and confirmed directly against the live API: ScreenScraper
+        # echoes the request URL back into several response fields (e.g.
+        # "commandRequested", and once per suggested media URL in a game's
+        # media list) with every underscore backslash-escaped ("\_") - not a
+        # valid JSON escape sequence (only ", \, /, b, f, n, r, t, uXXXX are),
+        # so a strict parser rejects the entire body. This is ScreenScraper's
+        # own serialization bug (very likely a Markdown-escaping step that
+        # leaks into their JSON output whenever an underscore appears
+        # anywhere in the echoed request - including in SOFTNAME itself,
+        # "mister_turing_client"), not something specific to this client, so
+        # blindly stripping the bogus backslash is safe: "\_" is never a
+        # legitimate escape a compliant JSON emitter would produce, so this
+        # can't misinterpret real content.
+        body = body.replace(b"\\_", b"_")
         try:
             data = json.loads(body)
         except json.JSONDecodeError:
