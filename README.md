@@ -67,6 +67,26 @@ bash /media/fat/Scripts/.config/mister_turing_client/start_turing_client.sh stat
 bash /media/fat/Scripts/.config/mister_turing_client/uninstall.sh   # to remove it
 ```
 
+## Screenshots
+
+Software-rendered, not phone photos of the physical screen yet - real
+render code (`render_now_playing()`, etc.) against real data pulled live
+off a running MiSTer (a Nintendo 64 session, Mortal Kombat 4), at native
+480x320, pixel-doubled for legibility here. Swap-in-ready for real
+hardware photos later; the layout and content are exactly what's on the
+actual screen.
+
+| | |
+|---|---|
+| **Now Playing** — core/game identity, stats, artwork | **Box Art** — full-screen |
+| ![Now Playing](screenshots/now_playing.png) | ![Box Art](screenshots/boxart.png) |
+| **RA Progress** | **RA Trophies** |
+| ![RA Progress](screenshots/ra_progress.png) | ![RA Trophies](screenshots/ra_trophies.png) |
+
+**Achievement unlock popup** (overlays whatever page is showing):
+
+![Achievement unlock popup](screenshots/unlock_popup.png)
+
 ## Why this exists
 
 MiSTer_monitor is built around the CYD (Cheap Yellow Display) - a good,
