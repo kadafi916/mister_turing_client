@@ -129,3 +129,10 @@ echo
 echo "To check status:  ${TARGET_DIR}/start_turing_client.sh status"
 echo "To stop:          ${TARGET_DIR}/start_turing_client.sh stop"
 echo "To uninstall:     bash ${TARGET_DIR}/uninstall.sh"
+echo
+
+# ===== Self-cleanup =====
+# Everything needed has been copied to its permanent location; remove the
+# staging copy the same way MiSTer_monitor's own install.sh does.
+echo "Cleaning up installation folder..."
+rm -rf "${INSTALLER_DIR}"
