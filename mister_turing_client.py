@@ -446,12 +446,24 @@ def main():
                 media_order = (config.arcade_subsystem_media_order if snapshot.get("is_arcade")
                                 else config.core_media_order)
 
+            # libretro-thumbnails only ever has *game* art (see
+            # libretro_thumbs.py's docstring) - so with ScreenScraper
+            # unconfigured (as it is right now: no dev key yet), there is
+            # nothing to fetch at all for the no-game case (Menu, or a core
+            # loaded with nothing in it), and showing "Downloading
+            # artwork..." there would be pure noise implying work that was
+            # never going to happen.
+            if has_game:
+                will_fetch_art = (ss.configured and system_id) or libretro.configured
+            else:
+                will_fetch_art = ss.configured and system_id
+
             force_full_redraw = False
             if identity != art_identity:
                 art_identity = identity
                 art_path = None
                 force_full_redraw = True  # see the transition comment below
-                if (ss.configured or libretro.configured) and (system_id or core_raw):
+                if will_fetch_art:
                     comm.DisplayPILImage(render_waiting(width, height, fonts, "Downloading artwork..."))
                     if has_game:
                         if ss.configured and system_id:

@@ -25,6 +25,7 @@ this exact core-name vocabulary already (see libretro-artwork-api/app.py),
 so no separate translation table is needed on this side.
 """
 
+import json
 import os
 import urllib.error
 import urllib.parse
@@ -72,17 +73,29 @@ class LibretroThumbsClient:
             return dest_path
 
         tried_types = set()
+        last_reason = None
         for token in media_order.split(","):
             media_type = _TYPE_MAP.get(token.strip().lower())
             if not media_type or media_type in tried_types:
                 continue
             tried_types.add(media_type)
-            if self._download(core_raw, game_title, media_type, dest_path):
+            ok, reason = self._download(core_raw, game_title, media_type, dest_path)
+            if ok:
                 return dest_path
+            last_reason = reason
 
+        if tried_types:
+            # Visible at the default log level on purpose - a silent
+            # no-match here (e.g. the title libretro-thumbnails has on file
+            # doesn't fuzzy-match what mister_status_server reported) was
+            # previously undiagnosable without guessing; this at least says
+            # what was tried and why the last attempt failed.
+            logger.info("libretro-thumbnails: no artwork for %s '%s' (tried %s, last: %s)",
+                        core_raw, game_title, sorted(tried_types), last_reason or "?")
         return None
 
-    def _download(self, system: str, game: str, media_type: str, dest_path: str) -> bool:
+    def _download(self, system: str, game: str, media_type: str, dest_path: str):
+        """Returns (True, None) on success, (False, reason) otherwise."""
         params = {"system": system, "game": game, "type": media_type}
         url = f"{self.base_url}/artwork?" + urllib.parse.urlencode(params)
         req = urllib.request.Request(url, headers={"User-Agent": "mister_turing_client"})
@@ -90,16 +103,26 @@ class LibretroThumbsClient:
             with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                 body = resp.read()
         except urllib.error.HTTPError as e:
-            if e.code != 404:
-                # 404 (unmapped system / not cloned locally / no title
-                # match) is the expected "try the next thing" outcome;
-                # anything else is worth a louder log, same reasoning as
+            reason = f"HTTP {e.code}"
+            if e.code == 404:
+                # The API's 404 body is JSON with a real reason ("unmapped
+                # system: x" / "no local data for .../restart" / "no match")
+                # - surface it instead of discarding it, that's exactly the
+                # detail needed to tell "bad system mapping" apart from
+                # "title just didn't fuzzy-match".
+                try:
+                    reason = json.loads(e.read()).get("error", reason)
+                except Exception:
+                    pass
+            else:
+                # Anything other than 404 (the expected "try the next
+                # thing" outcome) is worth a louder log, same reasoning as
                 # ScreenScraper's client's 401/403 handling.
                 logger.warning("libretro-artwork-api %s: HTTP %s", url, e.code)
-            return False
+            return False, reason
         except Exception as e:
             logger.debug("libretro-artwork-api %s: %s", url, e)
-            return False
+            return False, str(e)
 
         tmp_path = dest_path + ".part"
         with open(tmp_path, "wb") as f:
@@ -107,4 +130,4 @@ class LibretroThumbsClient:
         os.replace(tmp_path, dest_path)
         logger.info("Artwork cached (libretro-thumbnails): %s (%s, %d bytes)",
                     os.path.basename(dest_path), media_type, len(body))
-        return True
+        return True, None
