@@ -10,8 +10,11 @@ README.md for the full picture, including why Pillow/numpy are vendored
 rather than pip-installed on MiSTer's own Buildroot Python.
 
 Up to four pages rotate automatically (no touch input on this hardware,
---pages picks which and in what order - a single page pins the display
-to just that one, e.g. --pages boxart): "Now Playing" (artwork + core/game
+--pages/config.ini's [pages] picks which and in what order - a single page
+pins the display to just that one, e.g. --pages boxart; config.ini's
+[pages_ra] can swap in a different rotation for as long as an RA-adapted
+core is active, switching back automatically the instant it isn't):
+"Now Playing" (artwork + core/game
 identity + system stats), a full-screen "Box Art" page (when artwork is
 available), and, only while the *active core* is actually an RA-adapted
 one (RA_-prefixed CORENAME, or the odelot fork's live debug-log heartbeat
@@ -92,6 +95,35 @@ ALL_PAGES = ("now_playing", "boxart", "ra_summary", "ra_trophies")
 # caches after any full redraw, for every page shaped this way - not just
 # Now Playing, now that RA Progress/Trophies show artwork too.
 PAGES_WITH_ART = ("now_playing", "ra_summary", "ra_trophies")
+
+
+def parse_pages(raw, fallback, source) -> list:
+    """raw: a comma-separated page-name string, possibly empty ("not
+    set"). Falls back to `fallback` (already-validated) when empty, or
+    when every name in it is unrecognized - logged, not fatal, since a
+    typo in config.ini shouldn't be able to stop the client from starting
+    the way a CLI typo (caught by argparse, exits before this is even
+    reached) can. `source` is just what the warning names, e.g.
+    "config.ini [pages] pages"."""
+    if not raw:
+        return list(fallback)
+    names = [p.strip() for p in raw.split(",") if p.strip()]
+    unknown = [p for p in names if p not in ALL_PAGES]
+    if unknown:
+        logger.warning("%s: unknown page(s) %s - choose from %s, using default instead",
+                        source, unknown, list(ALL_PAGES))
+        return list(fallback)
+    return names or list(fallback)
+
+
+def parse_seconds(raw, fallback, source) -> float:
+    if not raw:
+        return fallback
+    try:
+        return float(raw)
+    except ValueError:
+        logger.warning("%s: %r isn't a number, using default instead", source, raw)
+        return fallback
 
 
 def fetch_json(base_url: str, path: str, timeout: float = 2.0):
@@ -495,30 +527,57 @@ def main():
                      help="poll/refresh interval in seconds (default: %(default)s)")
     ap.add_argument("--brightness", type=int, default=80,
                      help="screen brightness 0-100 (default: %(default)s)")
-    ap.add_argument("--page-seconds", type=float, default=DEFAULT_PAGE_SECONDS,
+    ap.add_argument("--page-seconds", type=float, default=None,
                      help="how long each page stays up before rotating to the next "
-                          "one in --pages (default: %(default)s)")
-    ap.add_argument("--pages", default=",".join(ALL_PAGES),
+                          "one in --pages - overrides config.ini's [pages]/[pages_ra] "
+                          "page_seconds unconditionally when given (default: "
+                          f"{DEFAULT_PAGE_SECONDS} if config.ini doesn't set one either)")
+    ap.add_argument("--pages", default=None,
                      help="comma-separated pages to rotate through, in rotation "
                           "order - choose from now_playing, boxart, ra_summary, "
                           "ra_trophies. A single page pins the display to just "
                           "that one - e.g. --pages boxart for a box-art-only mode, "
                           "or --pages ra_summary,ra_trophies to skip Now Playing/Box "
-                          "Art entirely (default: %(default)s)")
+                          "Art entirely. Overrides config.ini's [pages]/[pages_ra] "
+                          "pages unconditionally when given, disabling the RA/non-RA "
+                          f"switching described there (default: {','.join(ALL_PAGES)} "
+                          "if config.ini doesn't set one either)")
     ap.add_argument("--config", default=os.path.join(_HERE, "config.ini"),
                      help="path to config.ini (default: %(default)s)")
     ap.add_argument("--once", action="store_true",
                      help="render a single frame and exit (for testing)")
     args = ap.parse_args()
 
-    pages = [p.strip() for p in args.pages.split(",") if p.strip()]
-    unknown = [p for p in pages if p not in ALL_PAGES]
-    if unknown:
-        ap.error(f"--pages: unknown page(s) {unknown} - choose from {list(ALL_PAGES)}")
-    if not pages:
-        ap.error("--pages: must name at least one page")
+    if args.pages is not None:
+        # --pages given: unconditional override, same behavior in every
+        # session regardless of RA state - see the help text above.
+        pages = parse_pages(args.pages, ALL_PAGES, "--pages")
+        pages_ra = None
+    else:
+        pages = None  # resolved below, once config.ini is loaded
+        pages_ra = None
+
+    page_seconds_cli = args.page_seconds  # None unless explicitly given
 
     config = Config(args.config)
+
+    if pages is None:
+        pages = parse_pages(config.pages, ALL_PAGES, "config.ini [pages] pages")
+        # [pages_ra] only takes effect if it actually names at least one
+        # page - an empty/absent section means "no RA-specific override",
+        # not "empty rotation" (see Config's own docstring-equivalent
+        # comment in config.py).
+        if config.pages_ra:
+            pages_ra = parse_pages(config.pages_ra, pages, "config.ini [pages_ra] pages")
+
+    if page_seconds_cli is not None:
+        page_seconds = page_seconds_cli
+        page_seconds_ra = None
+    else:
+        page_seconds = parse_seconds(config.page_seconds, DEFAULT_PAGE_SECONDS, "config.ini [pages] page_seconds")
+        page_seconds_ra = (parse_seconds(config.page_seconds_ra, page_seconds, "config.ini [pages_ra] page_seconds")
+                            if pages_ra is not None else None)
+
     ss = ScreenScraperClient(config, ARTWORK_CACHE_DIR)
     libretro = LibretroThumbsClient(config.libretro_base_url, ARTWORK_CACHE_DIR)
     if not ss.configured and not libretro.configured:
@@ -544,6 +603,7 @@ def main():
 
     page_idx = 0
     page_deadline = 0.0
+    ra_mode_active = None  # None = not yet evaluated; forces the first tick to "switch"
     trophies_page_num = 0
     trophies_total_pages = 1
     art_identity = None  # (system_id, crc-or-name) of the art currently cached
@@ -724,8 +784,30 @@ def main():
             # RA's database", which is all game_matched means on its own
             # (server-side cloud polling, independent of core) - see
             # is_ra_core_active().
-            ra_pages_available = ra_status.game_matched and is_ra_core_active(ra_status)
+            core_ra_active = is_ra_core_active(ra_status)
+            ra_pages_available = ra_status.game_matched and core_ra_active
             has_art_page = art_path is not None
+
+            # config.ini's [pages_ra] (see config.ini.example) swaps in a
+            # different rotation/timing for as long as an RA-adapted core
+            # is genuinely active - independent of ra_pages_available
+            # above, which additionally requires a matched game: the
+            # intent of a config like "cover art only normally, full
+            # rotation the moment I'm on an RA core" is "I'm using an
+            # RA-capable core", not "this specific game already resolved",
+            # so this switches on the core alone.
+            use_ra_mode = pages_ra is not None and core_ra_active
+            if use_ra_mode != ra_mode_active:
+                # Mode just changed - page_idx may not even be a valid
+                # index into the newly-active list, and whatever's left of
+                # the old page_deadline shouldn't apply to it either.
+                # Force an immediate fresh selection from the new list.
+                ra_mode_active = use_ra_mode
+                page_idx = -1
+                page_deadline = 0.0
+            active_pages = pages_ra if use_ra_mode else pages
+            active_page_seconds = (page_seconds_ra if use_ra_mode and page_seconds_ra is not None
+                                    else page_seconds)
 
             def _page_available(name):
                 if name in ("ra_summary", "ra_trophies"):
@@ -735,15 +817,15 @@ def main():
                 return True
 
             if now >= page_deadline:
-                for _ in range(len(pages)):
-                    page_idx = (page_idx + 1) % len(pages)
-                    if _page_available(pages[page_idx]):
+                for _ in range(len(active_pages)):
+                    page_idx = (page_idx + 1) % len(active_pages)
+                    if _page_available(active_pages[page_idx]):
                         break
-                page_deadline = now + args.page_seconds
-                if pages[page_idx] == "ra_trophies":
+                page_deadline = now + active_page_seconds
+                if active_pages[page_idx] == "ra_trophies":
                     trophies_page_num = (trophies_page_num + 1) % trophies_total_pages
 
-            page = pages[page_idx]
+            page = active_pages[page_idx]
 
             if new_unlock:
                 popup_until = now + POPUP_SECONDS

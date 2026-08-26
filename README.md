@@ -321,6 +321,39 @@ else on this hardware seems to warrant being its own page (a stats-only
 page would just be Now Playing with the artwork and game identity stripped
 out, not different information).
 
+### Different rotation while playing an RA-adapted core
+
+The same `pages`/`page_seconds` are also configurable in `config.ini`
+(persistent, no need to edit `start_turing_client.sh`) - `--pages`/
+`--page-seconds` on the command line still override them unconditionally
+when given. What config.ini adds on top: a *second*, independent rotation
+that automatically takes over for as long as `is_ra_core_active()` is
+true, switching back the instant it isn't - no restart needed either way.
+Answers exactly "cover art only normally, but the full experience the
+moment I'm playing something RA-tracked":
+
+```ini
+[pages]
+pages=boxart
+page_seconds=15
+
+[pages_ra]
+pages=now_playing,boxart,ra_summary,ra_trophies
+```
+
+`[pages_ra]` only needs the keys you actually want to differ - leaving
+`page_seconds` out of it here means RA mode keeps `[pages]`'s 15s rather
+than falling back to the built-in 25s default. Leave the whole section
+out (or its `pages` blank) to use `[pages]` unconditionally regardless of
+RA state - today's single-mode behavior, and what happens if you don't
+touch this at all (default: all four pages, 25s each, no RA-specific
+override). The switch triggers on the *core* alone
+(`is_ra_core_active()`), not on `ra_pages_available`'s additional
+"has this specific game been matched yet" - the intent of a config like
+this is "I'm using an RA-capable core", which is true from the moment
+that core loads, not from whenever the currently-loaded game happens to
+resolve.
+
 ### RetroAchievements: reading `unlocks_tracked` correctly
 
 `ra_status.py`'s `unlocks_tracked` field (rendered on the RA Progress page

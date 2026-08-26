@@ -40,6 +40,24 @@ class Config:
         self.arcade_media_order = images.get("arcade_media_order", DEFAULT_ARCADE_MEDIA_ORDER)
         self.game_media_order = images.get("game_media_order", DEFAULT_GAME_MEDIA_ORDER)
 
+        # Page rotation. Raw strings, deliberately unvalidated/undefaulted
+        # here (empty = "not set") - mister_turing_client.py's ALL_PAGES/
+        # DEFAULT_PAGE_SECONDS are the actual fallbacks and the only place
+        # page names are validated, to avoid this module needing to import
+        # from (and risk a circular import with) the main script.
+        pages = parser["pages"] if parser.has_section("pages") else {}
+        self.pages = pages.get("pages", "").strip()
+        self.page_seconds = pages.get("page_seconds", "").strip()
+
+        # Optional: a different rotation while an RA-adapted core is
+        # actively running (is_ra_core_active()) - e.g. cover art only
+        # normally, full rotation back the moment you're playing something
+        # RA-tracked. Empty/absent means "no RA-specific override", not
+        # "empty rotation" - see main()'s fallback to [pages] above.
+        pages_ra = parser["pages_ra"] if parser.has_section("pages_ra") else {}
+        self.pages_ra = pages_ra.get("pages", "").strip()
+        self.page_seconds_ra = pages_ra.get("page_seconds", "").strip()
+
     @property
     def screenscraper_configured(self) -> bool:
         return bool(self.ss_user and self.ss_pass and self.ss_dev_user and self.ss_dev_pass)

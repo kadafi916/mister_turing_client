@@ -38,3 +38,28 @@ region=us
 ;arcade_subsystem_media_order=wheel-steel,wheel-carbon,wheel
 ;arcade_media_order=fanart,marquee,wheel-carbon,wheel-steel,wheel,box3d,box2d,screenshot
 ;game_media_order=box3d,box2d,wheel-carbon,wheel-steel,wheel,fanart,marquee,screenshot
+
+[pages]
+; Which pages rotate through, and how long each stays up (seconds), in
+; the default/normal case. Choose from: now_playing, boxart, ra_summary,
+; ra_trophies. A single page pins the display to just that one - no
+; rotation. --pages/--page-seconds on the command line override these
+; unconditionally when given. Leave blank/commented to use the built-in
+; default (all four pages, 25s each).
+;pages=now_playing,boxart,ra_summary,ra_trophies
+;page_seconds=25
+
+[pages_ra]
+; Optional: a *different* rotation while the active core is actually
+; RA-adapted (is_ra_core_active() - see README.md "RA Progress"/"RA
+; Trophies") - switches automatically the moment that becomes true or
+; false, no restart needed. Example: cover art only normally, full
+; rotation back the instant you're playing something RA-tracked:
+;   [pages]
+;   pages=boxart
+;   [pages_ra]
+;   pages=now_playing,boxart,ra_summary,ra_trophies
+; Leave this whole section blank/commented to use [pages] unconditionally
+; regardless of RA state - the default, single-mode behavior.
+;pages=now_playing,boxart,ra_summary,ra_trophies
+;page_seconds=25
