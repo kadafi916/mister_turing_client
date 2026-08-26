@@ -39,12 +39,17 @@ fallback for the unambiguous case (a single-entry zip).
 
 This lives in `mister_status_server.py`, not this repo — that file
 belongs to the separate AGPL [MiSTer_monitor](https://github.com/chipster6502/MiSTer_monitor)
-server project, so the fix was submitted upstream:
-[chipster6502/MiSTer_monitor#18](https://github.com/chipster6502/MiSTer_monitor/pull/18).
-Until that's merged, the fix is available on
-[this branch](https://github.com/kadafi916/MiSTer_monitor/tree/fix/zip-single-entry-no-internal-path)
-if you're hitting this now.
+server project. Reported upstream as
+[chipster6502/MiSTer_monitor#18](https://github.com/chipster6502/MiSTer_monitor/pull/18)
+and **fixed on `main`** — the maintainer resolved it a level higher, in
+`get_rom_details_from_zip()`, so the sole zip member is resolved before
+any of the matching strategies run and `internal_path` correctly
+propagates into the result dict (needed by the RA layer's own
+`_get_active_rom()`, which otherwise hashes the whole archive instead of
+the ROM). Update `mister_status_server.py` to current `main` to pick up
+the fix — no interim branch needed any more.
 
 If RA/artwork silently produce nothing for a specific game despite
-working for others, check `/status/rom/details`'s `error` field for this
-exact message before assuming it's a credential or matching problem.
+working for others on an older `mister_status_server.py`, check
+`/status/rom/details`'s `error` field for this exact message before
+assuming it's a credential or matching problem.
