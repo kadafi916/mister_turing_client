@@ -276,7 +276,14 @@ below):
   Companion) reports `core_raw` with its `RA_` prefix intact too - stripped
   the same way for artwork lookups.
 - **Box Art** — the same artwork full-screen, letterboxed and centered at
-  native display resolution, when any is available.
+  native display resolution, when any is available. With nothing loaded
+  (sitting at the MiSTer menu) it becomes an idle screensaver instead of a
+  static "No artwork" - a slideshow cycling every `SCREENSAVER_SECONDS`
+  (20s) through a random pick of whatever's already been fetched this
+  session, regardless of system. A game that's genuinely loaded but has
+  no art match still shows the honest "No artwork" message, not a random
+  slideshow of something else you've played - the screensaver is
+  specifically the nothing-loaded case.
 - **RA Progress** / **RA Trophies** — progress, points/hardcore breakdown,
   a paginated trophy list, and the same artwork sidebar Now Playing shows.
   Shown only while the *active core* is actually RA-adapted (confirmed via

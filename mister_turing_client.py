@@ -49,6 +49,7 @@ sys.path.insert(0, _PYLIBS)
 
 import argparse
 import json
+import random
 import threading
 import time
 import urllib.request
@@ -86,6 +87,7 @@ ART_W = 200  # artwork panel width on pages that show one
 
 DEFAULT_PAGE_SECONDS = 25.0
 POPUP_SECONDS = 6.0
+SCREENSAVER_SECONDS = 20.0  # how often the Box Art screensaver picks a new image
 
 ALL_PAGES = ("now_playing", "boxart", "ra_summary", "ra_trophies")
 # Pages laid out as an info panel + an artwork sidebar (see
@@ -157,6 +159,27 @@ def load_art_image(path, size):
     except Exception as e:
         logger.debug("Could not open artwork %s: %s", path, e)
         return None
+
+
+def pick_screensaver_image(cache_dir, exclude=None):
+    """A random previously-fetched image from cache_dir, for the Box Art
+    page's idle-screensaver slideshow (see main()) - everything already
+    fetched this session, whatever media type it happened to be (box art,
+    a logo, a snap - the media_order winner varies by game), is fair game
+    for a rotating showcase of what's been played. Not filtered to the
+    currently-loaded system since there isn't one at the menu, the one
+    time this is used. `exclude`: don't immediately repeat this filename
+    when more than one candidate exists."""
+    try:
+        names = [f for f in os.listdir(cache_dir)
+                 if f.lower().endswith((".png", ".jpg", ".jpeg")) and not f.endswith(".part")]
+    except OSError:
+        return None
+    if not names:
+        return None
+    if exclude in names and len(names) > 1:
+        names = [n for n in names if n != exclude]
+    return os.path.join(cache_dir, random.choice(names))
 
 
 class CachedArtLoader:
@@ -604,6 +627,8 @@ def main():
     page_idx = 0
     page_deadline = 0.0
     ra_mode_active = None  # None = not yet evaluated; forces the first tick to "switch"
+    screensaver_path = None
+    screensaver_deadline = 0.0
     trophies_page_num = 0
     trophies_total_pages = 1
     art_identity = None  # (system_id, crc-or-name) of the art currently cached
@@ -750,8 +775,18 @@ def main():
             else:
                 pending_identity = None
                 art_identity = identity
-                art_path = None
-                art_image = None
+                # Deliberately NOT clearing art_path/art_image here - they
+                # keep showing the previous game's art (stale, but a real
+                # image) until the new fetch actually resolves, a few
+                # ticks below. Confirmed real symptom of clearing them
+                # immediately: switching games flashed the *old* game's
+                # art, then a "No artwork" placeholder, then the *new*
+                # game's art once the fetch finished - the middle step
+                # was always going to be wrong the moment the new game
+                # turned out to actually have art, which is the common
+                # case. A stale-but-plausible image for a couple of
+                # seconds reads better than a confident "not found" that
+                # then gets contradicted.
                 force_full_redraw = True  # see the transition comment below
                 if will_fetch_art:
                     # Runs in a background thread (see ArtworkFetcher) -
@@ -910,7 +945,25 @@ def main():
                     frame = render_ra_trophies(width, height, ra_status, achievements, cur_page, total_pages,
                                                 art_image, fonts)
                 else:  # boxart
-                    boxart_image = boxart_loader.get(art_path, (width, height))
+                    boxart_source = art_path
+                    if art_path is None and not has_game:
+                        # Idle screensaver: nothing loaded (sitting at the
+                        # MiSTer menu, the one time this triggers - a game
+                        # that's genuinely loaded but just has no art match
+                        # still correctly shows "No artwork" below, not a
+                        # random slideshow of something else you played),
+                        # so cycle through whatever's already been fetched
+                        # this session instead of a static "No artwork".
+                        if now >= screensaver_deadline:
+                            screensaver_path = pick_screensaver_image(
+                                ARTWORK_CACHE_DIR,
+                                exclude=os.path.basename(screensaver_path) if screensaver_path else None,
+                            )
+                            screensaver_deadline = now + SCREENSAVER_SECONDS
+                        boxart_source = screensaver_path
+                    else:
+                        screensaver_deadline = 0.0  # picks fresh next time it's needed
+                    boxart_image = boxart_loader.get(boxart_source, (width, height))
                     frame = render_boxart_fullscreen(width, height, boxart_image, fonts)
 
                 if show_popup:
