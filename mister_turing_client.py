@@ -607,6 +607,7 @@ def main():
     trophies_page_num = 0
     trophies_total_pages = 1
     art_identity = None  # (system_id, crc-or-name) of the art currently cached
+    pending_identity = None  # a not-yet-confirmed identity - see the debounce below
     art_path = None
     art_image = None
     art_fetcher = ArtworkFetcher()
@@ -721,7 +722,33 @@ def main():
                 will_fetch_art = ss.configured and system_id
 
             force_full_redraw = False
-            if identity != art_identity:
+            # Debounced: a new identity only gets acted on once it's been
+            # seen on two consecutive polls, not the first time it
+            # appears. Confirmed happening in practice and not caught by
+            # the identity_unconfirmed handling above (a different,
+            # explicitly-flagged transient - this one wasn't flagged as
+            # uncertain, it was reported as a confident, real load): OSD
+            # ROM browsing on a stock SNES core briefly, confidently
+            # reported a highlighted-but-never-loaded game as the active
+            # one, and this client dutifully fetched and cached real
+            # artwork for it (Earthbound) before the actually-loaded game
+            # (Yoshi's Island) showed up ~26s later. mister_status_server's
+            # own detection logic already has extensive empirical
+            # navigation-vs-launch hardening (FILESELECT/CURRENTPATH/
+            # ACTIVEGAME mtime comparisons - see its source), so this is a
+            # rare edge it doesn't fully close rather than something
+            # obviously wrong there; a one-poll debounce here defends
+            # against this and any similar not-yet-discovered case
+            # generally, at the cost of a ~1 poll interval (--interval,
+            # 2s default) delay before art fetches for a genuine load too
+            # - imperceptible, especially now that fetching never blocks
+            # rendering anyway (see ArtworkFetcher).
+            if identity == art_identity:
+                pending_identity = None
+            elif identity != pending_identity:
+                pending_identity = identity
+            else:
+                pending_identity = None
                 art_identity = identity
                 art_path = None
                 art_image = None
