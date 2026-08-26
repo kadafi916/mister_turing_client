@@ -940,7 +940,10 @@ def main():
                 if h != info_hash:
                     comm.DisplayPILImage(info_img, x=0, y=0, image_width=left_w, image_height=height)
                     info_hash = h
-                if has_art and art_identity != art_pushed_identity:
+                # not art_pending: a push here has to be the *final* answer
+                # for this identity, not a stale/previous-game placeholder -
+                # see the art_pushed_identity assignment below for why.
+                if has_art and art_identity != art_pushed_identity and not art_pending:
                     art_x = width - ART_W - 12
                     art_canvas = render_art_panel(art_image, ART_W, height - 60)
                     comm.DisplayPILImage(art_canvas, x=art_x, y=48, image_width=ART_W, image_height=height - 60)
@@ -1018,7 +1021,24 @@ def main():
                     # caches so the next tick's partial-update path doesn't
                     # immediately re-push what's already correctly on screen.
                     info_hash = None  # differs in shape from info_img's own hash; let it recompute once, cheap
-                    art_pushed_identity = art_identity
+                    # Only seed art_pushed_identity when the art actually
+                    # painted into this frame is the *real, final* answer
+                    # for art_identity (a resolved fetch, match or not) -
+                    # not a still-in-flight fetch's stale placeholder.
+                    # Root-caused from a real report: seeding it
+                    # unconditionally here made the steady-state path
+                    # above believe the art panel was already correct the
+                    # moment a page transition happened, so once the
+                    # background fetch actually resolved a few ticks
+                    # later, nothing ever re-pushed it - the panel was
+                    # stuck on whatever (possibly a previous game's stale)
+                    # art happened to be on screen at transition time,
+                    # only getting "corrected" by sheer coincidence at the
+                    # *next* transition, using whatever art was current by
+                    # then - which is what read as a later game's art
+                    # bleeding onto an earlier one.
+                    if not art_pending:
+                        art_pushed_identity = art_identity
 
             last_page_shown = page
 
