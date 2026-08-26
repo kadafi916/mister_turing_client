@@ -629,6 +629,7 @@ def main():
     ra_mode_active = None  # None = not yet evaluated; forces the first tick to "switch"
     screensaver_path = None
     screensaver_deadline = 0.0
+    last_boxart_source = None  # most recent non-None boxart_source shown - see the boxart branch below
     trophies_page_num = 0
     trophies_total_pages = 1
     art_identity = None  # (system_id, crc-or-name) of the art currently cached
@@ -839,6 +840,14 @@ def main():
             fetched = art_fetcher.result_for(art_identity)
             if fetched is not None:
                 art_path, art_image = fetched
+            # True only while a fetch for the *current* identity is still
+            # in flight - not yet true or false, genuinely unknown. Once
+            # will_fetch_art is False (nothing was ever going to be
+            # fetched) or the fetch above has resolved (fetched is not
+            # None), art_path itself is the honest answer - either real
+            # art or a confirmed no-match. See the boxart branch below for
+            # why this distinction matters.
+            art_pending = will_fetch_art and fetched is None
 
             # -- page selection --
             # RA pages require the *active core* to actually be RA-adapted -
@@ -945,7 +954,6 @@ def main():
                     frame = render_ra_trophies(width, height, ra_status, achievements, cur_page, total_pages,
                                                 art_image, fonts)
                 else:  # boxart
-                    boxart_source = art_path
                     if art_path is None and not has_game:
                         # Idle screensaver: nothing loaded (sitting at the
                         # MiSTer menu, the one time this triggers - a game
@@ -963,6 +971,33 @@ def main():
                         boxart_source = screensaver_path
                     else:
                         screensaver_deadline = 0.0  # picks fresh next time it's needed
+                        if art_path is not None:
+                            boxart_source = art_path
+                        elif art_pending:
+                            # A game just loaded and its fetch hasn't
+                            # resolved yet - art_path is None but that's
+                            # not a confirmed no-match, just "not yet
+                            # known". Root-caused from the logs: coming
+                            # from the screensaver (art_path was never
+                            # actually populated while sitting at the
+                            # menu, only the screensaver's own picks were
+                            # shown), the instant has_game flips true this
+                            # fell straight to "No artwork" for however
+                            # long the fetch took, even though something
+                            # reasonable to show was sitting right there.
+                            # Same "stale beats a premature negative"
+                            # reasoning as not clearing art_path on an
+                            # identity commit - just extended to the one
+                            # case that trick alone didn't cover.
+                            boxart_source = last_boxart_source
+                        else:
+                            # Fetch resolved with nothing, or nothing was
+                            # ever going to be fetched - an honest,
+                            # confirmed "No artwork" below, not a stale
+                            # placeholder pretending otherwise.
+                            boxart_source = None
+                    if boxart_source is not None:
+                        last_boxart_source = boxart_source
                     boxart_image = boxart_loader.get(boxart_source, (width, height))
                     frame = render_boxart_fullscreen(width, height, boxart_image, fonts)
 
