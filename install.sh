@@ -65,6 +65,7 @@ done
 chmod +x "${TARGET_DIR}/build_pylibs.sh" "${TARGET_DIR}/uninstall.sh"
 cp -r "${INSTALLER_DIR}/turing_lcd" "${TARGET_DIR}/"
 cp -r "${INSTALLER_DIR}/fonts" "${TARGET_DIR}/"
+cp -r "${INSTALLER_DIR}/docs" "${TARGET_DIR}/"
 
 if [ ! -f "${TARGET_DIR}/config.ini" ]; then
     cp "${INSTALLER_DIR}/config.ini.example" "${TARGET_DIR}/config.ini"
