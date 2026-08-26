@@ -260,7 +260,10 @@ plain SSH exec with no TTY, defaults to keeping them).
 ## Features
 
 Four pages rotate automatically (no touch input on this hardware, so pages
-cycle on a timer via `--page-seconds` rather than being tapped through):
+cycle on a timer via `--page-seconds` rather than being tapped through) -
+`--pages` picks which pages and in what order, so a single page pins the
+display to just that one instead of rotating (see "Single-page modes"
+below):
 
 - **Now Playing** — core/game identity, CPU/memory bars, uptime, SD usage,
   and game/core artwork fetched on demand from ScreenScraper and/or a
@@ -268,31 +271,55 @@ cycle on a timer via `--page-seconds` rather than being tapped through):
   Arcade content is handled specially: MiSTer's Arcade core reports a
   different `core_raw` per loaded `.mra` (its own MAME-style setname, e.g.
   `rtype`, `tmnt2`) rather than a stable "this is arcade" identifier, so
-  artwork lookups key off the snapshot's own `is_arcade` flag instead.
+  artwork lookups key off the snapshot's own `is_arcade` flag instead. An
+  RA-adapted core (odelot fork, launched directly rather than via MiSTer
+  Companion) reports `core_raw` with its `RA_` prefix intact too - stripped
+  the same way for artwork lookups.
 - **Box Art** — the same artwork full-screen, letterboxed and centered at
   native display resolution, when any is available.
 - **RA Progress** / **RA Trophies** — progress, points/hardcore breakdown,
-  and a paginated trophy list. Shown only while the *active core* is
-  actually RA-adapted (confirmed via the odelot fork's live debug-log
-  heartbeat, or - when that's not enabled - `/tmp/CORENAME` itself being
-  `RA_`-prefixed, checked directly since this client runs on-device and
-  `mister_status_server` strips that prefix before exposing `core_raw`).
-  A stock core whose loaded ROM merely hashes to something in RA's
-  database (server-side cloud polling, independent of core) does not get
-  these pages - see `is_ra_core_active()`. An unlock popup overlays
-  whatever page is showing the moment the server reports a new one.
-  Entirely server-side — see `docs/configuration.md#retroachievements` in
-  MiSTer_monitor for how to set up `ra_credentials.ini` on the MiSTer;
-  this client only renders what `/status/retroachievements` already
-  reports.
+  a paginated trophy list, and the same artwork sidebar Now Playing shows.
+  Shown only while the *active core* is actually RA-adapted (confirmed via
+  the odelot fork's live debug-log heartbeat, or - when that's not enabled
+  - `/tmp/CORENAME` itself being `RA_`-prefixed, checked directly since
+  this client runs on-device and `mister_status_server` strips that prefix
+  before exposing `core_raw`). A stock core whose loaded ROM merely hashes
+  to something in RA's database (server-side cloud polling, independent of
+  core) does not get these pages - see `is_ra_core_active()`. An unlock
+  popup overlays whatever page is showing the moment the server reports a
+  new one. Entirely server-side — see
+  `docs/configuration.md#retroachievements` in MiSTer_monitor for how to
+  set up `ra_credentials.ini` on the MiSTer; this client only renders what
+  `/status/retroachievements` already reports.
 
 Redraws are split into independently-updated regions rather than
-resending the whole frame every poll tick - the artwork panel (by far the
-largest payload over this display's slow serial link) only gets re-pushed
-when the game/system identity actually changes, not on every tick just
-because a stat number ticked over. A full-frame push happens only on a
-genuine transition: a page change, an achievement popup, or an artwork
-change.
+resending the whole frame every poll tick, on every page that shows
+artwork (`PAGES_WITH_ART` - everything except Box Art, which is already
+just one big image) - the artwork panel (by far the largest payload over
+this display's slow serial link) only gets re-pushed when the game/system
+identity actually changes, not on every tick just because a stat number
+ticked over. A full-frame push happens only on a genuine transition: a
+page change, an achievement popup, or an artwork change.
+
+### Single-page modes
+
+`--pages` takes a comma-separated list and rotates through exactly those,
+in that order - so a single name pins the display to just it, no rotation
+at all:
+
+```
+--pages boxart                    # box art only, full-screen
+--pages now_playing                # stats + artwork only, no RA pages ever
+--pages ra_summary,ra_trophies     # RA-only, skips Now Playing/Box Art
+```
+
+No dedicated flag exists for each of these - the full page set (`now_playing,
+boxart, ra_summary, ra_trophies`, the default) and any single-page or
+partial-rotation subset are all the same mechanism. That already covers
+every combination worth having given the four page types that exist; nothing
+else on this hardware seems to warrant being its own page (a stats-only
+page would just be Now Playing with the artwork and game identity stripped
+out, not different information).
 
 ### RetroAchievements: reading `unlocks_tracked` correctly
 

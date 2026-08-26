@@ -9,15 +9,19 @@ Pillow, pushed to the screen over the vendored turing_lcd library. See
 README.md for the full picture, including why Pillow/numpy are vendored
 rather than pip-installed on MiSTer's own Buildroot Python.
 
-Up to four pages rotate automatically (no touch input on this hardware):
-"Now Playing" (artwork + core/game identity + system stats), a full-screen
-"Box Art" page (when artwork is available), and, only while the *active
-core* is actually an RA-adapted one (RA_-prefixed CORENAME, or the odelot
-fork's live debug-log heartbeat - see is_ra_core_active()), "RA Progress"
-and "RA Trophies" (paginated). A stock core with a hash that merely
-happens to match something in RA's database (server-side cloud polling,
-independent of the core) does not get RA pages - see is_ra_core_active().
-An achievement unlock shows a popup overlay the moment the server reports
+Up to four pages rotate automatically (no touch input on this hardware,
+--pages picks which and in what order - a single page pins the display
+to just that one, e.g. --pages boxart): "Now Playing" (artwork + core/game
+identity + system stats), a full-screen "Box Art" page (when artwork is
+available), and, only while the *active core* is actually an RA-adapted
+one (RA_-prefixed CORENAME, or the odelot fork's live debug-log heartbeat
+- see is_ra_core_active()), "RA Progress" and "RA Trophies" (paginated).
+A stock core with a hash that merely happens to match something in RA's
+database (server-side cloud polling, independent of the core) does not
+get RA pages - see is_ra_core_active(). Now Playing, RA Progress and RA
+Trophies all show the current game/system artwork alongside their info
+(see PAGES_WITH_ART); Box Art is the same artwork full-screen instead. An
+achievement unlock shows a popup overlay the moment the server reports
 one, on top of whatever page is current.
 """
 
@@ -74,10 +78,19 @@ GOOD = (110, 210, 140)
 GOLD = (230, 190, 90)
 POPUP_BG = (26, 22, 10)
 
-ART_W = 200  # artwork panel width on the Now Playing page
+ART_W = 200  # artwork panel width on pages that show one
 
 DEFAULT_PAGE_SECONDS = 25.0
 POPUP_SECONDS = 6.0
+
+ALL_PAGES = ("now_playing", "boxart", "ra_summary", "ra_trophies")
+# Pages laid out as an info panel + an artwork sidebar (see
+# render_art_panel()) - "boxart" isn't one of these, it's art filling the
+# whole frame with no info panel to split. Used both to pick the steady-
+# state partial-redraw path in main() and to reset that path's dedup
+# caches after any full redraw, for every page shaped this way - not just
+# Now Playing, now that RA Progress/Trophies show artwork too.
+PAGES_WITH_ART = ("now_playing", "ra_summary", "ra_trophies")
 
 
 def fetch_json(base_url: str, path: str, timeout: float = 2.0):
@@ -236,17 +249,21 @@ def render_boxart_fullscreen(width, height, art_path, fonts) -> Image.Image:
     return img
 
 
-def render_ra_summary(width, height, ra_status, fonts) -> Image.Image:
+def render_ra_summary_info(panel_width, height, ra_status, fonts) -> Image.Image:
+    """Same content as the left (non-artwork) side of render_ra_summary(),
+    as its own standalone image - see render_now_playing_info()'s
+    docstring for why this split exists and how it's used."""
     f_title, f_body, f_small = fonts
-    img = Image.new("RGB", (width, height), BG)
+    img = Image.new("RGB", (panel_width, height), BG)
     d = ImageDraw.Draw(img)
-    draw_header(d, width, "RetroAchievements", ra_status.game_title, fonts)
+    draw_header(d, panel_width, "RetroAchievements", ra_status.game_title, fonts)
 
+    x1 = panel_width - 12
     y = 56
     d.text((12, y), "Progress", font=f_body, fill=DIM)
     y += 22
-    draw_stat_bar(d, "", ra_status.progress_pct, y, 12, width - 70, f_body)
-    d.text((width - 60, y), f"{ra_status.progress_pct:>3.0f}%", font=f_small, fill=FG)
+    draw_stat_bar(d, "", ra_status.progress_pct, y, 12, x1 - 58, f_body)
+    d.text((x1 - 48, y), f"{ra_status.progress_pct:>3.0f}%", font=f_small, fill=FG)
     y += 30
     d.text((12, y), f"Unlocked   {ra_status.unlocked} / {ra_status.total}", font=f_body, fill=FG)
     y += 22
@@ -272,11 +289,34 @@ def render_ra_summary(width, height, ra_status, fonts) -> Image.Image:
     return img
 
 
-def render_ra_trophies(width, height, ra_status, achievements, page, pages, fonts) -> Image.Image:
-    f_title, f_body, f_small = fonts
+def render_ra_summary(width, height, ra_status, art_image, fonts) -> Image.Image:
+    """Full-frame RA Progress composite - render_ra_summary_info() +
+    render_art_panel() at the same fixed offsets render_now_playing() uses,
+    for the same steady-state-vs-full-redraw consistency reason."""
+    has_art = art_image is not None
+    left_w = (width - ART_W - 24) if has_art else (width - 12)
     img = Image.new("RGB", (width, height), BG)
+    img.paste(render_ra_summary_info(left_w, height, ra_status, fonts), (0, 0))
+    if has_art:
+        art_x = width - ART_W - 12
+        img.paste(render_art_panel(art_image, ART_W, height - 60), (art_x, 48))
+    return img
+
+
+def render_ra_trophies_info(panel_width, height, ra_status, achievements, page, pages, fonts) -> Image.Image:
+    """Same content as the left (non-artwork) side of render_ra_trophies(),
+    as its own standalone image - see render_now_playing_info()'s
+    docstring for why this split exists and how it's used."""
+    f_title, f_body, f_small = fonts
+    img = Image.new("RGB", (panel_width, height), BG)
     d = ImageDraw.Draw(img)
-    draw_header(d, width, "Trophies", f"{ra_status.game_title}  ({page + 1}/{max(pages, 1)})", fonts)
+    draw_header(d, panel_width, "Trophies", f"{ra_status.game_title}  ({page + 1}/{max(pages, 1)})", fonts)
+
+    # Rough monospace char-width estimate at this font size, so a long
+    # title doesn't overflow into (or past) the narrower panel when an
+    # artwork sidebar is present - same "good enough, not pixel-measured"
+    # truncation approach draw_header already uses for core/game names.
+    max_title_chars = max(16, (panel_width - 44) // 8)
 
     y = 48
     row_h = (height - y - 8) / max(len(achievements), 1) if achievements else 0
@@ -285,7 +325,7 @@ def render_ra_trophies(width, height, ra_status, achievements, page, pages, font
         mark = "★" if a.hardcore else ("✓" if a.unlocked else "○")
         d.text((12, int(y)), mark, font=f_body, fill=color)
         title = f"{a.title} ({a.points}pt)"
-        d.text((32, int(y)), title[:52], font=f_small, fill=FG if a.unlocked else DIM)
+        d.text((32, int(y)), title[:max_title_chars], font=f_small, fill=FG if a.unlocked else DIM)
         y += max(row_h, 18)
 
     if not achievements:
@@ -294,6 +334,20 @@ def render_ra_trophies(width, height, ra_status, achievements, page, pages, font
         else:
             d.text((12, y), "Loading achievements...", font=f_body, fill=DIM)
 
+    return img
+
+
+def render_ra_trophies(width, height, ra_status, achievements, page, pages, art_image, fonts) -> Image.Image:
+    """Full-frame RA Trophies composite - render_ra_trophies_info() +
+    render_art_panel() at the same fixed offsets render_now_playing() uses,
+    for the same steady-state-vs-full-redraw consistency reason."""
+    has_art = art_image is not None
+    left_w = (width - ART_W - 24) if has_art else (width - 12)
+    img = Image.new("RGB", (width, height), BG)
+    img.paste(render_ra_trophies_info(left_w, height, ra_status, achievements, page, pages, fonts), (0, 0))
+    if has_art:
+        art_x = width - ART_W - 12
+        img.paste(render_art_panel(art_image, ART_W, height - 60), (art_x, 48))
     return img
 
 
@@ -359,13 +413,27 @@ def main():
     ap.add_argument("--brightness", type=int, default=80,
                      help="screen brightness 0-100 (default: %(default)s)")
     ap.add_argument("--page-seconds", type=float, default=DEFAULT_PAGE_SECONDS,
-                     help="how long each page (Now Playing / Box Art / RA Progress / "
-                          "RA Trophies) stays up before rotating (default: %(default)s)")
+                     help="how long each page stays up before rotating to the next "
+                          "one in --pages (default: %(default)s)")
+    ap.add_argument("--pages", default=",".join(ALL_PAGES),
+                     help="comma-separated pages to rotate through, in rotation "
+                          "order - choose from now_playing, boxart, ra_summary, "
+                          "ra_trophies. A single page pins the display to just "
+                          "that one - e.g. --pages boxart for a box-art-only mode, "
+                          "or --pages ra_summary,ra_trophies to skip Now Playing/Box "
+                          "Art entirely (default: %(default)s)")
     ap.add_argument("--config", default=os.path.join(_HERE, "config.ini"),
                      help="path to config.ini (default: %(default)s)")
     ap.add_argument("--once", action="store_true",
                      help="render a single frame and exit (for testing)")
     args = ap.parse_args()
+
+    pages = [p.strip() for p in args.pages.split(",") if p.strip()]
+    unknown = [p for p in pages if p not in ALL_PAGES]
+    if unknown:
+        ap.error(f"--pages: unknown page(s) {unknown} - choose from {list(ALL_PAGES)}")
+    if not pages:
+        ap.error("--pages: must name at least one page")
 
     config = Config(args.config)
     ss = ScreenScraperClient(config, ARTWORK_CACHE_DIR)
@@ -391,7 +459,6 @@ def main():
         ImageFont.truetype(FONT_REGULAR, 13),
     )
 
-    pages = ["now_playing", "boxart", "ra_summary", "ra_trophies"]
     page_idx = 0
     page_deadline = 0.0
     trophies_page_num = 0
@@ -575,10 +642,28 @@ def main():
             # unconditionally, part of every single poll-interval redraw).
             transition = (page != last_page_shown) or show_popup or force_full_redraw or args.once
 
-            if page == "now_playing" and not transition:
+            # ra_trophies needs a fresh achievements fetch regardless of
+            # which redraw path runs below - it's cheap (ra_status.py's own
+            # docs: "costs ZERO extra RA API calls", derived from data the
+            # progress fetch already downloads) and unlocks can land while
+            # sitting on this page.
+            if page == "ra_trophies":
+                achievements, cur_page, total_pages = ra.fetch_achievements_page(
+                    fetch_json, args.server, trophies_page_num)
+                trophies_total_pages = max(total_pages, 1)
+
+            if page in PAGES_WITH_ART and not transition:
                 has_art = art_image is not None
                 left_w = (width - ART_W - 24) if has_art else (width - 12)
-                info_img = render_now_playing_info(left_w, height, snapshot, system, storage, ra_status, fonts)
+
+                if page == "now_playing":
+                    info_img = render_now_playing_info(left_w, height, snapshot, system, storage, ra_status, fonts)
+                elif page == "ra_summary":
+                    info_img = render_ra_summary_info(left_w, height, ra_status, fonts)
+                else:  # ra_trophies
+                    info_img = render_ra_trophies_info(left_w, height, ra_status, achievements,
+                                                        cur_page, total_pages, fonts)
+
                 h = hashlib.blake2b(info_img.tobytes(), digest_size=16).digest()
                 if h != info_hash:
                     comm.DisplayPILImage(info_img, x=0, y=0, image_width=left_w, image_height=height)
@@ -592,12 +677,10 @@ def main():
                 if page == "now_playing":
                     frame = render_now_playing(width, height, snapshot, system, storage, ra_status, art_image, fonts)
                 elif page == "ra_summary":
-                    frame = render_ra_summary(width, height, ra_status, fonts)
+                    frame = render_ra_summary(width, height, ra_status, art_image, fonts)
                 elif page == "ra_trophies":
-                    achievements, cur_page, total_pages = ra.fetch_achievements_page(
-                        fetch_json, args.server, trophies_page_num)
-                    trophies_total_pages = max(total_pages, 1)
-                    frame = render_ra_trophies(width, height, ra_status, achievements, cur_page, total_pages, fonts)
+                    frame = render_ra_trophies(width, height, ra_status, achievements, cur_page, total_pages,
+                                                art_image, fonts)
                 else:  # boxart
                     frame = render_boxart_fullscreen(width, height, art_path, fonts)
 
@@ -612,7 +695,7 @@ def main():
                         logger.error("Display update failed: %s", e)
                 last_full_hash = h
 
-                if page == "now_playing":
+                if page in PAGES_WITH_ART:
                     # This tick's full composite already painted the
                     # current info + art content - seed both steady-state
                     # caches so the next tick's partial-update path doesn't
