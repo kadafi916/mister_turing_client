@@ -462,6 +462,20 @@ def main():
                 system_id = screenscraper_systems.get_system_id(system_name, core_raw)
                 has_game = bool(snapshot.get("game")) and rom_details.get("available")
 
+                # A genuinely RA-active core (the odelot fork, launched
+                # directly rather than via MiSTer Companion) reports
+                # core_raw with its "RA_" prefix intact - confirmed via
+                # real logs: "RA_NES" with unlocks_tracked=true and
+                # log_tail=true (definitely the real fork running), yet
+                # "unmapped system: ra_nes" from the artwork API.
+                # screenscraper_systems's id resolution tolerates this by
+                # falling back to system_name ("Nintendo NES/Famicom" -> id
+                # 3), but libretro_thumbs.py's API only understands
+                # stock core_raw-shaped keys - strip it here the same way
+                # mister_status_server.py's own _read_corename_raw() does
+                # server-side for the fields that DO get stripped.
+                _stock_core_raw = core_raw[3:] if core_raw.upper().startswith("RA_") else core_raw
+
                 # For arcade content, MiSTer's core_raw is the *loaded
                 # .mra's own setname* ("rtype", "tmnt2", "invaders", ...) -
                 # a different value per game, never a stable "this is
@@ -473,7 +487,7 @@ def main():
                 # core_raw-shaped keys - so override it here using the
                 # snapshot's own is_arcade flag, verified against the real
                 # artwork API to resolve arcade titles correctly.
-                libretro_system = "arcade" if snapshot.get("is_arcade") else core_raw
+                libretro_system = "arcade" if snapshot.get("is_arcade") else _stock_core_raw
 
                 if has_game:
                     identity = (system_id, rom_details.get("crc32") or rom_details.get("search_name") or "")
