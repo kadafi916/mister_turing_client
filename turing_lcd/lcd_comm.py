@@ -166,6 +166,18 @@ class LcdComm(ABC):
             self.closeSerial()
             time.sleep(1)
             self.openSerial()
+            # A SerialException (unlike a mere write timeout) means the
+            # link actually dropped - confirmed in the field: after a real
+            # physical USB-C replug, the transport reconnected fine (new
+            # writes kept succeeding) but the display's own MCU had
+            # silently reverted to its power-on-default orientation and
+            # kept whatever garbled frame was on screen at the moment of
+            # disconnect - neither of which a plain reopen touches. Clear()
+            # re-sends the last-known orientation (see its own comment)
+            # and wipes the screen, so the caller's retry below lands on a
+            # display that's actually back in a known state, not just a
+            # reconnected one.
+            self.Clear()
             self.lcd_serial.write(data)
 
     def serial_read(self, size: int) -> bytes:

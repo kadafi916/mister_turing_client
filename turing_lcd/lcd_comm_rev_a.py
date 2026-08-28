@@ -139,9 +139,15 @@ class LcdCommRevA(LcdComm):
         self.openSerial()
 
     def Clear(self):
+        current = self.orientation
         self.SetOrientation(Orientation.PORTRAIT)  # Bug: orientation needs to be PORTRAIT before clearing
         self.SendCommand(Command.CLEAR, 0, 0, 0, 0)
-        self.SetOrientation()  # Restore default orientation
+        # Restore whatever orientation was actually active, not the bare
+        # default (PORTRAIT) the old bare SetOrientation() call silently
+        # fell back to - confirmed in the field: this meant any reconnect
+        # path calling Clear() to recover from a real hardware disconnect
+        # would leave a landscape-mounted screen back in portrait.
+        self.SetOrientation(current)
 
     def ScreenOff(self):
         self.SendCommand(Command.SCREEN_OFF, 0, 0, 0, 0)
