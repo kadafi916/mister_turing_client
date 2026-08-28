@@ -117,7 +117,17 @@ class LcdComm(ABC):
                 logger.debug(f"Static COM port: {com_port}")
 
             try:
-                self.lcd_serial = serial.Serial(com_port, 115200, timeout=1, rtscts=True)
+                # write_timeout bounds serial_write() the same way timeout
+                # already bounds reads. Without it, a write blocks
+                # indefinitely if the display stops draining its input
+                # buffer (confirmed in the field: the whole app - polling,
+                # rendering, and artwork fetching, all inline in one loop -
+                # froze for 6+ minutes at a stretch with zero exceptions
+                # anywhere, because this call never returned). With a
+                # timeout set, WriteLine()'s existing SerialTimeoutException
+                # handler (below) actually gets a chance to run instead of
+                # that code being unreachable.
+                self.lcd_serial = serial.Serial(com_port, 115200, timeout=1, write_timeout=5, rtscts=True)
                 return
             except Exception as e:
                 logger.warning(

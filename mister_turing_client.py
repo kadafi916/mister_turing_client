@@ -88,6 +88,15 @@ ART_W = 200  # artwork panel width on pages that show one
 DEFAULT_PAGE_SECONDS = 25.0
 POPUP_SECONDS = 6.0
 SCREENSAVER_SECONDS = 20.0  # how often the Box Art screensaver picks a new image
+# Self-heals a full-frame push that "succeeded" (no exception) but the
+# display only actually rendered part of it - the serial link has no
+# checksum/ack, so a corrupted-but-not-timed-out write is invisible to
+# this app any other way. Forces a full repaint even with unchanged
+# content at least this often. Independent of, and a backstop for, the
+# write_timeout fix in turing_lcd/lcd_comm.py (that one bounds an
+# outright-stuck write; this one covers a write that returns fine but
+# didn't actually land correctly).
+HEARTBEAT_SECONDS = 45.0
 
 ALL_PAGES = ("now_playing", "boxart", "ra_summary", "ra_trophies")
 # Pages laid out as an info panel + an artwork sidebar (see
@@ -652,6 +661,7 @@ def main():
     # below) - what's believed to currently be physically on screen.
     last_page_shown = None
     last_full_hash = None       # ra_summary / ra_trophies / boxart (full-frame pages)
+    last_full_paint_time = 0.0  # see HEARTBEAT_SECONDS
     info_hash = None            # now_playing steady-state: info panel content
     art_pushed_identity = None  # now_playing steady-state: art panel identity
 
@@ -912,7 +922,8 @@ def main():
             # link (the actual root cause of the "changed too much" /
             # "half the art visible" symptoms - Now Playing's artwork was,
             # unconditionally, part of every single poll-interval redraw).
-            transition = (page != last_page_shown) or show_popup or force_full_redraw or args.once
+            transition = (page != last_page_shown) or show_popup or force_full_redraw or args.once \
+                or (now - last_full_paint_time >= HEARTBEAT_SECONDS)
 
             # ra_trophies needs a fresh achievements fetch regardless of
             # which redraw path runs below - it's cheap (ra_status.py's own
@@ -1011,9 +1022,15 @@ def main():
                 if transition or h != last_full_hash:
                     try:
                         comm.DisplayPILImage(frame)
+                        # Only record this frame as delivered if the push
+                        # actually completed - previously set unconditionally,
+                        # so a failed push (exception) still got marked as
+                        # shown and a later unchanged-content tick would
+                        # wrongly skip retrying it.
+                        last_full_hash = h
+                        last_full_paint_time = now
                     except Exception as e:
                         logger.error("Display update failed: %s", e)
-                last_full_hash = h
 
                 if page in PAGES_WITH_ART:
                     # This tick's full composite already painted the
