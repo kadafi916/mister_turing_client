@@ -147,8 +147,26 @@ class LcdComm(ABC):
             self.lcd_serial.close()
 
     def serial_write(self, data: bytes):
+        # Timeout/error handling lives here, not in WriteLine(), because
+        # several call sites (e.g. SetOrientation() in lcd_comm_rev_a.py)
+        # write directly through this method rather than through WriteLine -
+        # confirmed the hard way: adding write_timeout to the Serial object
+        # without this turned an indefinite hang into an uncaught
+        # SerialTimeoutException crashing the whole app on startup instead
+        # (SetOrientation() is called from Clear(), which runs before the
+        # main loop even starts).
         assert self.lcd_serial is not None
-        self.lcd_serial.write(data)
+        try:
+            self.lcd_serial.write(data)
+        except serial.SerialTimeoutException:
+            logger.warning("(serial_write) Too fast! Slow down!")
+        except serial.SerialException:
+            logger.error(
+                "SerialException: Failed to send serial data to device. Closing and reopening COM port before retrying once.")
+            self.closeSerial()
+            time.sleep(1)
+            self.openSerial()
+            self.lcd_serial.write(data)
 
     def serial_read(self, size: int) -> bytes:
         assert self.lcd_serial is not None
@@ -174,23 +192,13 @@ class LcdComm(ABC):
             self.WriteLine(line)
 
     def WriteLine(self, line: bytes):
-        try:
-            self.serial_write(line)
-            if platform.system() == "Darwin":
-                # macOS needs the serial buffer to be flushed regularly to avoid bitmap corruption on the display
-                # See https://github.com/mathoudebine/turing-smart-screen-python/issues/7
-                self.lcd_serial.flush()
-        except serial.SerialTimeoutException:
-            # We timed-out trying to write to our device, slow things down.
-            logger.warning("(Write line) Too fast! Slow down!")
-        except serial.SerialException:
-            # Error writing data to device: close and reopen serial port, try to write again
-            logger.error(
-                "SerialException: Failed to send serial data to device. Closing and reopening COM port before retrying once.")
-            self.closeSerial()
-            time.sleep(1)
-            self.openSerial()
-            self.serial_write(line)
+        # Timeout/reconnect handling lives in serial_write() now - see its
+        # own comment - so it applies to every caller, not just this one.
+        self.serial_write(line)
+        if platform.system() == "Darwin":
+            # macOS needs the serial buffer to be flushed regularly to avoid bitmap corruption on the display
+            # See https://github.com/mathoudebine/turing-smart-screen-python/issues/7
+            self.lcd_serial.flush()
 
     def ReadData(self, readSize: int):
         try:
