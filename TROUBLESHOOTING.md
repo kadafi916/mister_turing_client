@@ -53,3 +53,34 @@ If RA/artwork silently produce nothing for a specific game despite
 working for others on an older `mister_status_server.py`, check
 `/status/rom/details`'s `error` field for this exact message before
 assuming it's a credential or matching problem.
+
+## Display corruption, freezes, or unrelated core lockups - check the display's own USB link
+
+On a Superstation One console, a bad/marginal connection on the Turing
+display's own USB-C link caused problems well beyond the display itself:
+
+- Displayed frames visibly corrupted (fragments of several different box
+  art images layered on top of each other - see
+  `docs/display-corruption-example.jpg` for a real photo of this).
+- Whole-app freezes with zero errors anywhere (fixed in `2.x` by adding
+  `write_timeout` to the serial connection - see git log for
+  `turing_lcd/lcd_comm.py` - but that only bounds the freeze, it can't
+  fix a bad physical link).
+- **Cores unrelated to the display locking up** - reproducibly on the
+  PSX core, and previously suspected on Saturn (Sega Rally) and an
+  arcade core (Truxton 2). Confirmed by direct A/B: with the Turing
+  display physically unplugged, PSX ran a full session with no lockups
+  at all, after having locked up reliably with it connected.
+
+Root cause not fully pinned down (bad cable, bad port, or the display's
+own USB-serial adapter degrading) - but the display shares this dock's
+internal USB controller with everything else (controllers, storage,
+front ports), so a badly-behaving USB device on it can plausibly disrupt
+more than just its own traffic. If you're seeing core lockups on a
+Superstation One (or similar dock-style MiSTer) with this display
+attached, try unplugging it entirely as a diagnostic step before
+chasing anything core-specific - it's a fast, decisive test.
+
+`write_timeout` (present from `2.x` on) at least keeps a bad display
+link from freezing the whole client - update if you're on an older
+version and seeing indefinite hangs with nothing in the log.
